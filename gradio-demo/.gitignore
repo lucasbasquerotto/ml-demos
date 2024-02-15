@@ -1,2 +1,5 @@
 /__pycache__/
 /flagged/
+/gradio_cached_examples/
+/tmp/*
+!/tmp/.gitkeep
