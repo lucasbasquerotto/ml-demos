@@ -1,5 +1,6 @@
 /_static/
 .env
+/MUJOCO_LOG.TXT
 /*/.env
 /*/data/
 /**/*.pyc
