@@ -1,0 +1,41 @@
+[TYPECHECK]
+# List of members which are set dynamically and missed by Pylint inference
+# system, and so shouldn't trigger E1101 when accessed.
+generated-members=
+    torch.min,
+    torch.ones_like,
+    torch.tensor,
+    torch.stack,
+    torch.randperm,
+    torch.zeros,
+    torch.ones
+
+[MESSAGES CONTROL]
+enable=useless-suppression
+disable=
+    broad-exception-raised,
+    invalid-name,
+    redefined-builtin,
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    too-many-arguments,
+    too-few-public-methods,
+    too-many-instance-attributes,
+    too-many-locals,
+    too-many-statements,
+    use-dict-literal,
+    duplicate-code,
+    consider-using-with,
+    no-name-in-module,
+    import-error,
+    unnecessary-lambda,
+    use-a-generator,
+    too-many-nested-blocks,
+    broad-exception-caught,
+    unnecessary-comprehension,
+    consider-using-generator,
+    too-many-branches
+
+[MASTER]
+ignore=lint.ipynb, server.py, test.py
