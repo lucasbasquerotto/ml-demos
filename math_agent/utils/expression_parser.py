@@ -1,14 +1,13 @@
 import sympy as sp
+from .types import Expression, Transformation
 
-def parse_expression(expression: str) -> sp.Basic:
+def parse_expression(expression: str) -> Expression:
     try:
         return sp.sympify(expression)
     except Exception as exc:
-        raise ValueError("Invalid mathematical expression") from exc
+        raise ValueError(f"Invalid mathematical expression: {expression}") from exc
 
-def apply_transformation(expression: str, transformation: str) -> sp.Basic:
-    expr = parse_expression(expression)
-    trans = parse_expression(transformation)
-    if not isinstance(trans, sp.Equality):
-        raise ValueError("Transformation must be an equation")
-    return expr.subs(trans.lhs, trans.rhs)
+def apply_transformation(expression: Expression, transformation: Transformation) -> Expression:
+    if not isinstance(transformation, sp.Equality):
+        raise ValueError(f"Transformation must be an equation: {transformation}")
+    return expression.subs(transformation.lhs, transformation.rhs)

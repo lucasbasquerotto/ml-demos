@@ -61,14 +61,12 @@ math_agent/
 │   ├── environment.py
 │   ├── state.py
 │   ├── action.py
-│   ├── transformations.py
 │   ├── reward.py
 │   └── transition.py
 ├── tests/
 │   ├── __init__.py
 │   ├── test_agent.py
 │   ├── test_environment.py
-│   ├── test_transformations.py
 │   └── test_rewards.py
 └── utils/
     ├── __init__.py
@@ -118,9 +116,6 @@ math_agent/
 
 - **`environment/action.py`**
   Defines actions, representing transformations like exponentiation and simplification.
-
-- **`environment/transformations.py`**
-  Implements transformation rules as mathematical properties to apply to expressions.
 
 - **`environment/reward.py`**
   Defines the reward function, assigning rewards for goals and penalties for contradictions.
