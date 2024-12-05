@@ -15,9 +15,5 @@ def validate_transformation(expression: str, transformation: str) -> bool:
     except sp.SympifyError:
         return False
 
-def is_contradictory_expression(expression: sp.Basic) -> bool:
-    try:
-        simplified_expr = sp.simplify(expression)
-        return simplified_expr == sp.false
-    except sp.SympifyError:
-        return False
+def is_zero(expression: sp.Expr) -> bool | None:
+    return expression.equals(0)
