@@ -1,0 +1,14 @@
+{
+    "workbench.colorTheme": "Default Dark Modern",
+    "editor.semanticTokenColorCustomizations": {
+        "[Default Dark Modern]": {
+            "rules": {
+                "*.typeHint": "#4EC9B0"
+            }
+        }
+    },
+    "python.analysis.exclude": [
+        "tmp/"
+    ]
+
+}

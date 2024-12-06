@@ -38,4 +38,4 @@ disable=
     too-many-branches
 
 [MASTER]
-ignore=lint.ipynb, server.py, test.py
+ignore=lint.ipynb, server.py, test.py, tmp/*
