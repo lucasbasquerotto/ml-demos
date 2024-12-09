@@ -35,7 +35,8 @@ disable=
     broad-exception-caught,
     unnecessary-comprehension,
     consider-using-generator,
-    too-many-branches
+    too-many-branches,
+    logging-fstring-interpolation
 
 [MASTER]
 ignore=lint.ipynb, server.py, test.py, tmp/*

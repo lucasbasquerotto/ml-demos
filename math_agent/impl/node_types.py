@@ -1,5 +1,6 @@
 import sympy
-from utils.types import BaseNode, NodeTypeHandler, DefinitionKey
+from utils.types import DefinitionKey
+from environment.state import BaseNode, NodeTypeHandler
 
 definition_handler = NodeTypeHandler(
     DefinitionKey,

@@ -1,13 +1,15 @@
+import typing
 import numpy as np
-from utils.types import (
-    BaseNode, NodeTypeHandler, NodeValueParams, DefinitionKey, Assumption, ActionArgsMetaInfo
-)
+from utils.types import BaseNode, DefinitionKey, Assumption, ActionArgsMetaInfo
 
 MAIN_CONTEXT = 0
 DEFINITION_CONTEXT = 1
 ASSUMPTION_CONTEXT = 2
 ACTION_AMOUNT_CONTEXT = 3
 ACTION_ARGS_CONTEXT = 4
+
+T = typing.TypeVar("T", bound=BaseNode)
+V = typing.TypeVar("V", bound=int | float)
 
 # context index (e.g: main expression, definition expressions, assumptions)
 # subcontext index (e.g: which definition, which equality, which assumption)
@@ -16,6 +18,20 @@ ACTION_ARGS_CONTEXT = 4
 # node type index (e.g: symbol/unknown, definition, integer, function/operator)
 # node value (e.g: symbol index, definition index, integer value, function/operator index)
 
+class NodeValueParams(typing.Generic[T]):
+    def __init__(self, node: T, symbols: list[BaseNode], definition_keys: list[DefinitionKey]):
+        self.node = node
+        self.symbols = symbols
+        self.definition_keys = definition_keys
+
+class NodeTypeHandler(typing.Generic[T, V]):
+    def __init__(
+        self,
+        node_type: typing.Type[T],
+        get_value: typing.Callable[[NodeValueParams[T]], V],
+    ):
+        self.node_type = node_type
+        self.get_value = get_value
 
 class State:
     def __init__(
@@ -39,11 +55,58 @@ class State:
         self._assumption_keys = assumption_keys
         self._symbols = list(expression.free_symbols or set())
 
+    @classmethod
+    def index_to_node(cls, root: BaseNode, index: int) -> BaseNode | None:
+        node, _ = cls._index_to_node(root, index)
+        return node
+
+    @classmethod
+    def _index_to_node(cls, root: BaseNode, index: int) -> tuple[BaseNode | None, int]:
+        assert index > 0, f"Invalid index for root node: {index}"
+        assert isinstance(index, int), f"Invalid index type for root node: {type(index)} ({index})"
+        index -= 1
+        node: BaseNode | None = root
+
+        if index > 0:
+            for arg in root.args:
+                # recursive call each node arg to traverse its subtree
+                node, index = cls._index_to_node(root=arg, index=index)
+                assert index >= 0, f"Invalid index for node: {index}"
+                # it will end when index = 0 (it's the actual node, if any)
+                # otherwise, it will go to the next arg
+                if index == 0:
+                    break
+
+        return node if (index == 0) else None, index
+
+
     def terminal(self) -> bool:
         return self._expression.is_zero is not None
 
     def correct(self) -> bool | None:
         return self._expression.is_zero
+
+    def get_node(self, index: int) -> BaseNode | None:
+        node, index = self._index_to_node(self._expression, index)
+        assert index >= 0, f"Invalid index for node: {index}"
+        if node:
+            return node
+        if index == 0:
+            return None
+
+        for _, expr in self._definitions or []:
+            node, index = self._index_to_node(expr, index)
+            assert index >= 0, f"Invalid index for node: {index}"
+            if node:
+                return node
+            if index == 0:
+                return None
+
+        return None
+
+    def replace_node(self, index: int, new_node: BaseNode) -> 'State':
+        raise NotImplementedError()
+
 
     def to_raw_state(self) -> np.ndarray:
         main_state, _ = self._to_node_state_array(

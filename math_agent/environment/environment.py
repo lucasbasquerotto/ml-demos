@@ -1,6 +1,6 @@
 import typing
-from utils.types import BaseNode, NodeTypeHandler
-from .state import State
+from utils.types import BaseNode
+from .state import State, NodeTypeHandler
 from .action import Action
 from .reward import RewardEvaluator
 
