@@ -79,7 +79,9 @@ class SimplifyAddAction(DoubleChildAction):
 
         if node1 != -node2:
             raise InvalidActionArgsException(
-                f"Invalid node1 or node2 value (should be the same expression with opposite values): {node1}, {node2}")
+                "Invalid node1 or node2 value "
+                + "(should be the same expression with opposite values): "
+                + f"{node1}, {node2}")
 
         new_args = [arg for i, arg in enumerate(parent_node.args) if i not in [arg1, arg2]]
 
@@ -103,12 +105,14 @@ class SwapAddAction(DoubleChildAction):
         if not isinstance(parent_node, sympy.Add):
             raise InvalidActionArgException(f"Invalid parent node type: {type(parent_node)}")
         if not isinstance(arg1, int) or not isinstance(arg2, int):
-            raise InvalidActionArgsException(f"Invalid arg1 or arg2 type: {type(arg1)}, {type(arg2)}")
+            raise InvalidActionArgsException(
+                f"Invalid arg1 or arg2 type: {type(arg1)}, {type(arg2)}")
         if arg1 < 0 or arg2 < 0:
             raise InvalidActionArgsException(f"Invalid arg1 or arg2 min value: {arg1}, {arg2}")
         if arg1 >= len(parent_node.args) or arg2 >= len(parent_node.args):
             raise InvalidActionArgsException(
-                f"Invalid arg1 or arg2 max value: {arg1}, {arg2} (max {len(parent_node.args) - 1})")
+                "Invalid arg1 or arg2 max value: "
+                + f"{arg1}, {arg2} (max {len(parent_node.args) - 1})")
 
         new_args = list(parent_node.args)
         new_args[arg1], new_args[arg2] = new_args[arg2], new_args[arg1]
