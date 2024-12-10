@@ -36,9 +36,21 @@ V = typing.TypeVar("V", bound=int | float)
 
 class ActionData:
     def __init__(self, type: int, input: ActionInput, output: ActionOutput):
-        self.type = type
-        self.input = input
-        self.output = output
+        self._type = type
+        self._input = input
+        self._output = output
+
+    @property
+    def type(self) -> int:
+        return self._type
+
+    @property
+    def input(self) -> ActionInput:
+        return self._input
+
+    @property
+    def output(self) -> ActionOutput:
+        return self._output
 
 class NodeTypeHandler(typing.Generic[T, V]):
     def __init__(
@@ -46,8 +58,16 @@ class NodeTypeHandler(typing.Generic[T, V]):
         node_type: typing.Type[T],
         get_value: typing.Callable[[NodeValueParams[T]], V],
     ):
-        self.node_type = node_type
-        self.get_value = get_value
+        self._node_type = node_type
+        self._get_value = get_value
+
+    @property
+    def node_type(self) -> typing.Type[T]:
+        return self._node_type
+
+    @property
+    def get_value(self) -> typing.Callable[[NodeValueParams[T]], V]:
+        return self._get_value
 
 class EnvMetaInfo:
     def __init__(
@@ -64,6 +84,7 @@ class FullState:
         self,
         meta: EnvMetaInfo,
         history: list[State | ActionData],
+        max_history_size: int | None = None,
     ):
         assert len(meta.node_types) > 0, "No node types"
         assert len(meta.node_types) == len(set(meta.node_types)), "Duplicate node types"
@@ -71,8 +92,33 @@ class FullState:
         assert len(meta.action_types) == len(set(meta.action_types)), "Duplicate action types"
         self._meta = meta
         self._history = history
+        self._max_history_size = max_history_size
 
-    def apply(self, action: Action) -> 'State':
+    @classmethod
+    def initial_history(cls, expression: BaseNode) -> list[State | ActionData]:
+        return [State(expression)]
+
+    @property
+    def last_state(self) -> State:
+        for i in range(len(self._history) - 1, -1, -1):
+            item = self._history[i]
+            if isinstance(item, State):
+                return item
+
+        raise ValueError("No state found in history")
+
+    def _is_zero(self) -> bool | None:
+        last_state = self._history[-1]
+        assert isinstance(last_state, State)
+        return last_state.expression.is_zero
+
+    def terminal(self) -> bool:
+        return self._is_zero() is not None
+
+    def correct(self) -> bool | None:
+        return self._is_zero()
+
+    def apply(self, action: Action) -> 'FullState':
         last_state = self._history[-1]
         assert isinstance(last_state, State)
 
@@ -90,11 +136,19 @@ class FullState:
             input=action_input,
             output=action_output,
         )
-        self._history.append(action_data)
-        self._history.append(next_state)
 
-        return next_state
+        history = self._history.copy()
+        history.append(action_data)
+        history.append(next_state)
 
+        if self._max_history_size is not None:
+            history = history[-self._max_history_size:]
+
+        return FullState(
+            meta=self._meta,
+            history=history,
+            max_history_size=self._max_history_size,
+        )
 
     def to_raw_state(self) -> np.ndarray[np.int_, np.dtype]:
         meta_state = self._raw_meta_state(history_number=0)

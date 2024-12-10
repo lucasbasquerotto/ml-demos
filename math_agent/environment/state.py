@@ -79,13 +79,6 @@ class State:
 
         return node if (index == 0) else None, index
 
-
-    def terminal(self) -> bool:
-        return self.expression.is_zero is not None
-
-    def correct(self) -> bool | None:
-        return self.expression.is_zero
-
     def get_node(self, index: int) -> BaseNode | None:
         node, index = self._index_to_node(self.expression, index)
         assert index >= 0, f"Invalid index for node: {index}"
@@ -105,4 +98,6 @@ class State:
         return None
 
     def apply(self, action: ActionOutput) -> 'State':
+        # node_idx = action.node_idx
+        # new_node = action.new_node
         raise NotImplementedError()
