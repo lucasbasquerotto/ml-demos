@@ -1,49 +1,23 @@
 import sympy
+from utils.types import ActionOutput, NodeActionOutput, DefinitionActionOutput
 from environment.action import (
-    ACTION_ARG_TYPE_NODE,
-    ACTION_ARG_TYPE_NUMBER,
-    Action,
-    ActionInput,
-    ActionOutput,
-    ActionArgsMetaInfo,
     InvalidActionArgException,
     InvalidActionArgsException,
 )
 from environment.state import State
+from impl.base_action_types import SingleNodeAction, DoubleChildAction
 
-class DoubleChildAction(Action):
-
-    @classmethod
-    def metadata(cls) -> ActionArgsMetaInfo:
-        return ActionArgsMetaInfo([
-            ACTION_ARG_TYPE_NODE,
-            ACTION_ARG_TYPE_NUMBER,
-            ACTION_ARG_TYPE_NUMBER,
-        ])
-
-    @classmethod
-    def create(cls, input: ActionInput) -> 'Action':
-        if len(input.args) != len(cls.metadata().arg_types):
-            raise InvalidActionArgsException(f"Invalid action length: {len(input.args)}")
-
-        return cls(
-            input=input,
-            parent_node_idx=input.args[0].value,
-            arg1=input.args[1].value,
-            arg2=input.args[2].value,
-        )
-
-    def __init__(self, input: ActionInput, parent_node_idx: int, arg1: int, arg2: int):
-        self._input = input
-        self._parent_node_idx = parent_node_idx
-        self._arg1 = arg1
-        self._arg2 = arg2
-
-    def input(self) -> ActionInput:
-        return self._input
+class NodeToDefinitionAction(SingleNodeAction):
 
     def output(self, state: State) -> ActionOutput:
-        raise NotImplementedError()
+        node_idx = self._node_idx
+        node = state.get_node(node_idx)
+        if not node:
+            raise InvalidActionArgException(f"Invalid node index: {node_idx}")
+        definition_idx = len(state.definitions or [])
+        return DefinitionActionOutput(
+            definition_idx=definition_idx,
+            node_idx=node_idx)
 
 class SimplifyAddAction(DoubleChildAction):
 
@@ -86,10 +60,10 @@ class SimplifyAddAction(DoubleChildAction):
         new_args = [arg for i, arg in enumerate(parent_node.args) if i not in [arg1, arg2]]
 
         if not new_args:
-            return ActionOutput(node_idx=parent_node_idx, new_node=sympy.Integer(0))
+            return NodeActionOutput(node_idx=parent_node_idx, new_node=sympy.Integer(0))
         if len(new_args) == 1:
-            return ActionOutput(node_idx=parent_node_idx, new_node=new_args[0])
-        return ActionOutput(node_idx=parent_node_idx, new_node=sympy.Add(*new_args))
+            return NodeActionOutput(node_idx=parent_node_idx, new_node=new_args[0])
+        return NodeActionOutput(node_idx=parent_node_idx, new_node=sympy.Add(*new_args))
 
 class SwapAddAction(DoubleChildAction):
 
@@ -117,4 +91,4 @@ class SwapAddAction(DoubleChildAction):
         new_args = list(parent_node.args)
         new_args[arg1], new_args[arg2] = new_args[arg2], new_args[arg1]
 
-        return ActionOutput(node_idx=parent_node_idx, new_node=sympy.Add(*new_args))
+        return NodeActionOutput(node_idx=parent_node_idx, new_node=sympy.Add(*new_args))

@@ -1,8 +1,8 @@
 from utils.types import BaseNode, ActionArgType, ActionArgsMetaInfo, ActionOutput
 from .state import State
 
-ACTION_ARG_TYPE_NODE = 0
-ACTION_ARG_TYPE_NUMBER = 1
+ACTION_ARG_TYPE_NODE = 1
+ACTION_ARG_TYPE_NUMBER = 2
 
 class InvalidActionException(Exception):
     pass

@@ -1,6 +1,8 @@
 import numpy as np
+from utils.types import ActionOutput, NodeActionOutput, NewDefinitionActionOutput
+from utils.logger import logger
 from .state import State, BaseNode, DefinitionKey
-from .action import Action, ActionInput, ActionOutput
+from .action import Action, ActionInput, InvalidActionException
 from .meta_env import NodeValueParams, EnvMetaInfo
 
 HISTORY_TYPE_META = 0
@@ -20,9 +22,15 @@ ACTION_INPUT_CONTEXT = 1
 ACTION_OUTPUT_CONTEXT = 2
 ACTION_STATUS_CONTEXT = 3
 
-ACTION_OUTPUT_SUBCONTEXT_NODE_IDX = 0
-ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR = 1
-ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR = 1
+ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX = 0
+ACTION_OUTPUT_SUBCONTEXT_NODE_IDX = 1
+ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR = 2
+
+ACTION_STATUS_SKIP_ID = 0
+ACTION_STATUS_SUCCESS_ID = 1
+ACTION_STATUS_FAIL_ID = 2
+
+UNKNOWN_OR_EMPTY_NODE_TYPE = 0
 
 # context index (e.g: main expression, definition expressions, assumptions)
 # subcontext index (e.g: which definition, which equality, which assumption)
@@ -32,7 +40,7 @@ ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR = 1
 # node value (e.g: symbol index, definition index, integer value, function/operator index)
 
 class ActionData:
-    def __init__(self, type: int, input: ActionInput, output: ActionOutput):
+    def __init__(self, type: int, input: ActionInput, output: ActionOutput | None):
         self._type = type
         self._input = input
         self._output = output
@@ -46,7 +54,7 @@ class ActionData:
         return self._input
 
     @property
-    def output(self) -> ActionOutput:
+    def output(self) -> ActionOutput | None:
         return self._output
 
 class FullState:
@@ -93,13 +101,21 @@ class FullState:
         assert isinstance(last_state, State)
 
         action_types = self._meta.action_types
-        action_type = action_types.index(type(action))
-        assert action_type >= 0, f"Action type not found: {type(action)}"
+        # action type index (0 is for no action)
+        action_type = action_types.index(type(action)) + 1
+        assert action_type >= 1, f"Action type not found: {type(action)}"
 
         action_input = action.input()
-        action_output = action.output(last_state)
+        action_output: ActionOutput | None
 
-        next_state = last_state.apply(action_output)
+        try:
+            action_output = action.output(last_state)
+            next_state = last_state.apply(action_output)
+        except InvalidActionException as e:
+            logger.debug(f"Invalid action: {e}")
+            action_type = 0
+            action_output = None
+            next_state = last_state
 
         action_data = ActionData(
             type=action_type,
@@ -157,7 +173,7 @@ class FullState:
                     parent_node_idx=0,
                     node_idx=1,
                     atomic_node=1,
-                    node_type=0,
+                    node_type=UNKNOWN_OR_EMPTY_NODE_TYPE,
                     node_value=len(arg_types),
                 )
             )
@@ -262,36 +278,74 @@ class FullState:
             )
             action_arg_nodes.append(arg_node)
 
-        output_idx_node = self._named_node_state_item(
-            history_number=history_number,
-            history_type=HISTORY_TYPE_ACTION,
-            context=ACTION_OUTPUT_CONTEXT,
-            subcontext=ACTION_OUTPUT_SUBCONTEXT_NODE_IDX,
-            parent_node_idx=0,
-            node_idx=1,
-            atomic_node=1,
-            node_type=0,
-            node_value=action_output.node_idx,
-        )
-
-        output_expr_nodes, _ = self._to_node_state_array(
-            history_number=history_number,
-            history_type=HISTORY_TYPE_ACTION,
-            context=ACTION_OUTPUT_CONTEXT,
-            subcontext=ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR,
-            parent_node_idx=0,
-            node_idx=1,
-            node=action_output.new_node,
-            symbols=[],
-            definition_keys=[],
-        )
-
         nodes: np.ndarray[np.int_, np.dtype] = np.concatenate([
             [action_node],
             action_arg_nodes,
-            [output_idx_node],
-            output_expr_nodes,
         ])
+
+        if action_output is not None:
+            if isinstance(action_output, NodeActionOutput):
+                output_idx_node = self._named_node_state_item(
+                    history_number=history_number,
+                    history_type=HISTORY_TYPE_ACTION,
+                    context=ACTION_OUTPUT_CONTEXT,
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_NODE_IDX,
+                    parent_node_idx=0,
+                    node_idx=1,
+                    atomic_node=1,
+                    node_type=UNKNOWN_OR_EMPTY_NODE_TYPE,
+                    node_value=action_output.node_idx,
+                )
+
+                output_expr_nodes, _ = self._to_node_state_array(
+                    history_number=history_number,
+                    history_type=HISTORY_TYPE_ACTION,
+                    context=ACTION_OUTPUT_CONTEXT,
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR,
+                    parent_node_idx=0,
+                    node_idx=1,
+                    node=action_output.new_node,
+                    symbols=[],
+                    definition_keys=[],
+                )
+
+                nodes = np.concatenate([
+                    nodes,
+                    [output_idx_node],
+                    output_expr_nodes,
+                ])
+            elif isinstance(action_output, NewDefinitionActionOutput):
+                output_idx_node = self._named_node_state_item(
+                    history_number=history_number,
+                    history_type=HISTORY_TYPE_ACTION,
+                    context=ACTION_OUTPUT_CONTEXT,
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX,
+                    parent_node_idx=0,
+                    node_idx=1,
+                    atomic_node=1,
+                    node_type=UNKNOWN_OR_EMPTY_NODE_TYPE,
+                    node_value=action_output.definition_idx,
+                )
+
+                if action_output.node_idx is not None:
+                    output_idx_node = self._named_node_state_item(
+                        history_number=history_number,
+                        history_type=HISTORY_TYPE_ACTION,
+                        context=ACTION_OUTPUT_CONTEXT,
+                        subcontext=ACTION_OUTPUT_SUBCONTEXT_NODE_IDX,
+                        parent_node_idx=0,
+                        node_idx=1,
+                        atomic_node=1,
+                        node_type=UNKNOWN_OR_EMPTY_NODE_TYPE,
+                        node_value=action_output.node_idx,
+                    )
+
+                    nodes = np.concatenate([
+                        nodes,
+                        [output_idx_node],
+                    ])
+            else:
+                raise NotImplementedError(f"Action output not implemented: {type(action_output)}")
 
         return nodes
 
@@ -301,7 +355,7 @@ class FullState:
         history_number: int,
         history_type: int,
         context: int,
-        expressions: list[BaseNode],
+        expressions: list[BaseNode | None],
         symbols: list[BaseNode],
         definition_keys: list[DefinitionKey],
     ) -> np.ndarray[np.int_, np.dtype]:
@@ -340,7 +394,7 @@ class FullState:
         subcontext: int,
         parent_node_idx: int,
         node_idx: int,
-        node: BaseNode,
+        node: BaseNode | None,
         symbols: list[BaseNode],
         definition_keys: list[DefinitionKey],
     ) -> tuple[np.ndarray[np.int_, np.dtype], int]:
@@ -357,6 +411,9 @@ class FullState:
         ))
 
         next_node_idx = node_idx + 1
+
+        if node is None:
+            return state_array, next_node_idx
 
         for arg in node.args:
             inner_node_array, next_node_idx = self._to_node_state_array(
@@ -386,20 +443,28 @@ class FullState:
         subcontext: int,
         parent_node_idx: int,
         node_idx: int,
-        node: BaseNode,
+        node: BaseNode | None,
         symbols: list[BaseNode],
         definition_keys: list[DefinitionKey],
     ) -> list[int]:
         meta = self._meta
-        handler = next(h for h in meta.node_types if isinstance(node, h.node_type))
-        assert handler is not None, f"Handler not found for node: {node}"
-        atomic_node = len(node.args) == 0
-        node_type = meta.node_types.index(handler)
-        node_value = handler.get_value(NodeValueParams(
-            node=node,
-            symbols=symbols,
-            definition_keys=definition_keys,
-        ))
+
+        if node is not None:
+            handler = next(h for h in meta.node_types if isinstance(node, h.node_type))
+            assert handler is not None, f"Handler not found for node: {node}"
+            atomic_node = len(node.args) == 0
+            # node_type = 0 is for special node types (e.g: unknown, empty)
+            node_type = meta.node_types.index(handler) + 1
+            node_value = handler.get_value(NodeValueParams(
+                node=node,
+                symbols=symbols,
+                definition_keys=definition_keys,
+            ))
+        else:
+            atomic_node = 1
+            node_type = UNKNOWN_OR_EMPTY_NODE_TYPE
+            node_value = 0
+
         result = self._named_node_state_item(
             history_number=history_number,
             history_type=history_type,

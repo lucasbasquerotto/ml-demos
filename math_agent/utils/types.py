@@ -2,7 +2,8 @@ import sympy
 
 BaseNode = sympy.Basic
 
-DefinitionKey = sympy.Dummy
+class DefinitionKey(sympy.Dummy):
+    pass
 
 Assumption = sympy.Basic
 
@@ -19,7 +20,7 @@ class ActionArgsMetaInfo:
     def arg_types(self) -> list[ActionArgType]:
         return self._arg_types
 
-class ActionOutput:
+class NodeActionOutput:
     def __init__(self, node_idx: int, new_node: BaseNode):
         self._node_idx = node_idx
         self._new_node = new_node
@@ -31,3 +32,18 @@ class ActionOutput:
     @property
     def new_node(self) -> BaseNode:
         return self._new_node
+
+class NewDefinitionActionOutput:
+    def __init__(self, definition_idx: int, node_idx: int | None):
+        self._definition_idx = definition_idx
+        self._node_idx = node_idx
+
+    @property
+    def definition_idx(self) -> int:
+        return self._definition_idx
+
+    @property
+    def node_idx(self) -> int | None:
+        return self._node_idx
+
+ActionOutput = NodeActionOutput | NewDefinitionActionOutput

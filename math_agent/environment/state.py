@@ -1,10 +1,12 @@
-from utils.types import BaseNode, DefinitionKey, Assumption, ActionOutput
+from utils.types import (
+    BaseNode, DefinitionKey, Assumption, ActionOutput,
+    NodeActionOutput, NewDefinitionActionOutput)
 
 class State:
     def __init__(
         self,
         expression: BaseNode,
-        definitions: tuple[tuple[DefinitionKey, BaseNode], ...] | None = None,
+        definitions: tuple[tuple[DefinitionKey, BaseNode | None], ...] | None = None,
         assumptions: tuple[Assumption, ...] | None = None,
     ):
         self._expression = expression
@@ -16,7 +18,7 @@ class State:
         return self._expression
 
     @property
-    def definitions(self) -> tuple[tuple[DefinitionKey, BaseNode], ...] | None:
+    def definitions(self) -> tuple[tuple[DefinitionKey, BaseNode | None], ...] | None:
         return self._definitions
 
     @property
@@ -31,7 +33,7 @@ class State:
     @classmethod
     def _index_to_node(
         cls,
-        root: BaseNode,
+        root: BaseNode | None,
         index: int,
         parent: bool,
         parent_node: BaseNode | None = None,
@@ -42,7 +44,7 @@ class State:
         index -= 1
         node: BaseNode | None = root
 
-        if index > 0:
+        if index > 0 and root is not None:
             parent_node = root
             for i, arg in enumerate(root.args):
                 # recursive call each node arg to traverse its subtree
@@ -63,7 +65,7 @@ class State:
     @classmethod
     def _replace_node_index(
         cls,
-        root: BaseNode,
+        root: BaseNode | None,
         index: int,
         new_node: BaseNode,
     ) -> tuple[BaseNode | None, int]:
@@ -73,6 +75,9 @@ class State:
 
         if index == 0:
             return new_node, index
+
+        if root is None:
+            return None, index
 
         args_list: list[BaseNode] = list(root.args)
 
@@ -118,42 +123,66 @@ class State:
         return node
 
     def apply(self, action: ActionOutput) -> 'State':
-        node_idx = action.node_idx
-        new_node = action.new_node
+        if isinstance(action, NodeActionOutput):
+            node_idx = action.node_idx
+            new_node = action.new_node
 
-        assert node_idx >= 0, f"Invalid node index: {node_idx}"
+            assert node_idx >= 0, f"Invalid node index: {node_idx}"
 
-        if node_idx == 0:
-            return State(
-                expression=new_node,
-                definitions=self.definitions,
-                assumptions=self.assumptions)
-        else:
-            index = node_idx
-            new_root, index = self._replace_node_index(
-                root=self.expression, index=index, new_node=new_node)
-            assert index >= 0, f"Invalid index for node: {index}"
-            if index == 0:
-                assert new_root is not None, "Invalid new root node"
+            if node_idx == 0:
                 return State(
-                    expression=new_root,
+                    expression=new_node,
                     definitions=self.definitions,
                     assumptions=self.assumptions)
-
-            definitions_list = list(self.definitions or [])
-            for i, (key, expr) in enumerate(definitions_list):
+            else:
+                index = node_idx
                 new_root, index = self._replace_node_index(
-                    root=expr, index=index, new_node=new_node)
+                    root=self.expression, index=index, new_node=new_node)
                 assert index >= 0, f"Invalid index for node: {index}"
                 if index == 0:
-                    assert new_root is not None, "Invalid new root node (definition)"
-                    definitions_list[i] = (key, new_root)
+                    assert new_root is not None, "Invalid new root node"
                     return State(
-                        expression=self.expression,
-                        definitions=tuple(definitions_list),
+                        expression=new_root,
+                        definitions=self.definitions,
                         assumptions=self.assumptions)
 
-            raise ValueError(f"Invalid node index: {node_idx}")
+                definitions_list = list(self.definitions or [])
+                for i, (key, expr) in enumerate(definitions_list):
+                    new_root, index = self._replace_node_index(
+                        root=expr, index=index, new_node=new_node)
+                    assert index >= 0, f"Invalid index for node: {index}"
+                    if index == 0:
+                        assert new_root is not None, "Invalid new root node (definition)"
+                        definitions_list[i] = (key, new_root)
+                        return State(
+                            expression=self.expression,
+                            definitions=tuple(definitions_list),
+                            assumptions=self.assumptions)
+
+                raise ValueError(f"Invalid node index: {node_idx}")
+        elif isinstance(action, NewDefinitionActionOutput):
+            definition_idx = action.definition_idx
+            action_node_idx = action.node_idx
+
+            assert definition_idx >= 0, f"Invalid definition index: {definition_idx}"
+            assert action_node_idx is not None, f"Invalid node index: {action_node_idx}"
+
+            definitions_list = list(self.definitions or [])
+            node: BaseNode | None = None
+            if action_node_idx is not None:
+                node = self.get_node(action_node_idx)
+                assert node is not None, f"Invalid node index: {action_node_idx}"
+
+            definitions_list.append((
+                DefinitionKey(),
+                node
+            ))
+            return State(
+                expression=self.expression,
+                definitions=tuple(definitions_list),
+                assumptions=self.assumptions)
+        else:
+            raise ValueError(f"Invalid action output: {action}")
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, State):
@@ -171,6 +200,14 @@ class State:
         }
 
         return self._expression == other._expression.subs(definitions_to_replace) and all(
-            expr == other_expr.subs(definitions_to_replace)
+            (expr == other_expr == None)
+            or
+            (
+                expr is not None
+                and
+                other_expr is not None
+                and
+                expr == other_expr.subs(definitions_to_replace)
+            )
             for (_, expr), (_, other_expr) in zip(my_definitions, other_definitions)
         )
