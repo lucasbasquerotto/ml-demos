@@ -1,15 +1,15 @@
-import typing
 import numpy as np
-from utils.types import DefinitionKey
-from .state import State, BaseNode, NodeValueParams
+from .state import State, BaseNode, DefinitionKey
 from .action import Action, ActionInput, ActionOutput
+from .meta_env import NodeValueParams, EnvMetaInfo
 
 HISTORY_TYPE_META = 0
 HISTORY_TYPE_STATE = 1
 HISTORY_TYPE_ACTION = 2
 
-META_ACTION_AMOUNT_CONTEXT = 0
-META_ACTION_ARG_CONTEXT = 1
+META_MAIN_CONTEXT = 0
+META_ACTION_AMOUNT_CONTEXT = 1
+META_ACTION_ARG_CONTEXT = 2
 
 STATE_MAIN_CONTEXT = 0
 STATE_DEFINITION_CONTEXT = 1
@@ -23,9 +23,6 @@ ACTION_STATUS_CONTEXT = 3
 ACTION_OUTPUT_SUBCONTEXT_NODE_IDX = 0
 ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR = 1
 ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR = 1
-
-T = typing.TypeVar("T", bound=BaseNode)
-V = typing.TypeVar("V", bound=int | float)
 
 # context index (e.g: main expression, definition expressions, assumptions)
 # subcontext index (e.g: which definition, which equality, which assumption)
@@ -51,33 +48,6 @@ class ActionData:
     @property
     def output(self) -> ActionOutput:
         return self._output
-
-class NodeTypeHandler(typing.Generic[T, V]):
-    def __init__(
-        self,
-        node_type: typing.Type[T],
-        get_value: typing.Callable[[NodeValueParams[T]], V],
-    ):
-        self._node_type = node_type
-        self._get_value = get_value
-
-    @property
-    def node_type(self) -> typing.Type[T]:
-        return self._node_type
-
-    @property
-    def get_value(self) -> typing.Callable[[NodeValueParams[T]], V]:
-        return self._get_value
-
-class EnvMetaInfo:
-    def __init__(
-        self,
-        node_types: list[NodeTypeHandler[BaseNode, int]],
-        action_types: list[typing.Type[Action]],
-    ):
-        self.node_types = node_types
-        self.action_types = action_types
-        self.actions_arg_types = [action.metadata().arg_types for action in action_types]
 
 class FullState:
     def __init__(
@@ -243,7 +213,7 @@ class FullState:
             history_number=history_number,
             history_type=HISTORY_TYPE_STATE,
             context=STATE_ASSUMPTION_CONTEXT,
-            expressions=state.assumptions or [],
+            expressions=list(state.assumptions or []),
             symbols=symbols,
             definition_keys=definition_keys,
         )

@@ -154,3 +154,23 @@ class State:
                         assumptions=self.assumptions)
 
             raise ValueError(f"Invalid node index: {node_idx}")
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, State):
+            return False
+
+        my_definitions = self._definitions or tuple()
+        other_definitions = other._definitions or tuple()
+
+        if len(my_definitions) != len(other_definitions):
+            return False
+
+        definitions_to_replace = {
+            other_definition: definition
+            for (definition, _), (other_definition, _) in zip(my_definitions, other_definitions)
+        }
+
+        return self._expression == other._expression.subs(definitions_to_replace) and all(
+            expr == other_expr.subs(definitions_to_replace)
+            for (_, expr), (_, other_expr) in zip(my_definitions, other_definitions)
+        )
