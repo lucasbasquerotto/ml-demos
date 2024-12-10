@@ -452,7 +452,7 @@ class FullState:
         if node is not None:
             handler = next(h for h in meta.node_types if isinstance(node, h.node_type))
             assert handler is not None, f"Handler not found for node: {node}"
-            atomic_node = +(len(node.args) == 0)
+            atomic_node = int(len(node.args) == 0)
             # node_type = 0 is for special node types (e.g: unknown, empty)
             node_type = meta.node_types.index(handler) + 1
             node_value = handler.get_value(NodeValueParams(
