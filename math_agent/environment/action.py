@@ -2,7 +2,9 @@ from utils.types import BaseNode, ActionArgType, ActionArgsMetaInfo, ActionOutpu
 from .state import State
 
 ACTION_ARG_TYPE_NODE = 1
-ACTION_ARG_TYPE_NUMBER = 2
+ACTION_ARG_TYPE_PARTIAL_DEFINITION = 2
+ACTION_ARG_TYPE_DEFINITION = 3
+ACTION_ARG_TYPE_NUMBER = 4
 
 class InvalidActionException(Exception):
     pass
@@ -48,6 +50,11 @@ class Action:
         raise NotImplementedError()
 
     @classmethod
+    def validate_args_amount(cls, input: ActionInput) -> None:
+        if len(input.args) != len(cls.metadata().arg_types):
+            raise InvalidActionArgsException(f"Invalid action length: {len(input.args)}")
+
+    @classmethod
     def to_input(cls, action: tuple[int, ...]) -> ActionInput:
         if len(action) != len(cls.metadata().arg_types):
             raise InvalidActionArgsException(f"Invalid action length: {len(action)}")
@@ -62,6 +69,7 @@ class Action:
     def create(cls, input: ActionInput) -> 'Action':
         raise NotImplementedError()
 
+    @property
     def input(self) -> ActionInput:
         raise NotImplementedError()
 

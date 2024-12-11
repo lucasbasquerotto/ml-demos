@@ -1,5 +1,5 @@
 import numpy as np
-from utils.types import ActionOutput, NodeActionOutput, NewDefinitionActionOutput
+from utils.types import ActionOutput, SameValueNodeActionOutput, NewPartialDefinitionActionOutput
 from utils.logger import logger
 from .state import State, BaseNode, DefinitionKey
 from .action import Action, ActionInput, InvalidActionException
@@ -22,9 +22,10 @@ ACTION_INPUT_CONTEXT = 1
 ACTION_OUTPUT_CONTEXT = 2
 ACTION_STATUS_CONTEXT = 3
 
-ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX = 0
-ACTION_OUTPUT_SUBCONTEXT_NODE_IDX = 1
-ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR = 2
+ACTION_OUTPUT_SUBCONTEXT_PARTIAL_DEFINITION_IDX = 1
+ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX = 2
+ACTION_OUTPUT_SUBCONTEXT_NODE_IDX = 3
+ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR = 4
 
 ACTION_STATUS_SKIP_ID = 0
 ACTION_STATUS_SUCCESS_ID = 1
@@ -56,6 +57,94 @@ class ActionData:
     @property
     def output(self) -> ActionOutput | None:
         return self._output
+
+class NodeItemData:
+    def __init__(
+        self,
+        history_number: int,
+        history_type: int,
+        context: int,
+        subcontext: int,
+        parent_node_idx: int,
+        node_idx: int,
+        atomic_node: int,
+        node_type: int,
+        node_value: int,
+        history_expr_id: int | None,
+        node: BaseNode | None,
+    ):
+        if history_expr_id is not None:
+            assert history_expr_id > 0, f"Invalid history expression id: {history_expr_id}"
+
+        self._history_number = history_number
+        self._history_type = history_type
+        self._context = context
+        self._subcontext = subcontext
+        self._parent_node_idx = parent_node_idx
+        self._node_idx = node_idx
+        self._atomic_node = atomic_node
+        self._node_type = node_type
+        self._node_value = node_value
+        self._history_expr_id = history_expr_id
+        self._node = node
+
+    @property
+    def history_number(self) -> int:
+        return self._history_number
+
+    @property
+    def history_type(self) -> int:
+        return self._history_type
+
+    @property
+    def context(self) -> int:
+        return self._context
+
+    @property
+    def subcontext(self) -> int:
+        return self._subcontext
+
+    @property
+    def parent_node_idx(self) -> int:
+        return self._parent_node_idx
+
+    @property
+    def node_idx(self) -> int:
+        return self._node_idx
+
+    @property
+    def atomic_node(self) -> int:
+        return self._atomic_node
+
+    @property
+    def node_type(self) -> int:
+        return self._node_type
+
+    @property
+    def node_value(self) -> int:
+        return self._node_value
+
+    @property
+    def history_expr_id(self) -> int | None:
+        return self._history_expr_id
+
+    @property
+    def node(self) -> BaseNode | None:
+        return self.node
+
+    def to_array(self) -> np.ndarray[np.int_, np.dtype]:
+        return np.array([
+            self._history_number,
+            self._history_type,
+            self._context,
+            self._subcontext,
+            self._parent_node_idx,
+            self._node_idx,
+            self._atomic_node,
+            self._node_type,
+            self._node_value,
+            self._history_expr_id or 0,
+        ])
 
 class FullState:
     def __init__(
@@ -105,7 +194,7 @@ class FullState:
         action_type = action_types.index(type(action)) + 1
         assert action_type >= 1, f"Action type not found: {type(action)}"
 
-        action_input = action.input()
+        action_input = action.input
         action_output: ActionOutput | None
 
         try:
@@ -136,121 +225,116 @@ class FullState:
             max_history_size=self._max_history_size,
         )
 
-    def to_raw_state(self) -> np.ndarray[np.int_, np.dtype]:
-        meta_state = self._raw_meta_state(history_number=0)
-        main_states = np.array([], dtype=np.int_)
-        action_states = np.array([], dtype=np.int_)
+    def raw_data(self) -> np.ndarray[np.int_, np.dtype]:
+        nodes = self.node_data_list()
+        data = np.array([node.to_array() for node in nodes])
+        return data
 
-        for i, history in enumerate(self._history):
-            if isinstance(history, State):
-                main_state = self._raw_main_state(history_number=i+1, state=history)
-                main_states = np.concatenate([main_states, [main_state]])
-            elif isinstance(history, ActionData):
-                action_state = self._raw_action_state(history_number=i+1, action_data=history)
-                action_states = np.concatenate([action_states, [action_state]])
+    def node_data_list(self) -> list[NodeItemData]:
+        nodes_meta = self._node_data_list_meta(history_number=0)
+        nodes_states: list[NodeItemData] = []
+        nodes_actions: list[NodeItemData] = []
 
-        state = np.concatenate([
-            [meta_state],
-            main_states,
-            action_states,
-        ])
+        for i, history_item in enumerate(self._history):
+            if isinstance(history_item, State):
+                nodes_state = self._node_data_list_state(history_number=i+1, state=history_item)
+                nodes_states += nodes_state
+            elif isinstance(history_item, ActionData):
+                nodes_action = self._node_data_list_action(history_number=i+1, action_data=history_item)
+                nodes_actions += nodes_action
 
-        return state
-
-    def _raw_meta_state(self, history_number: int) -> np.ndarray[np.int_, np.dtype]:
-        meta = self._meta
-
-        action_amount_nodes = []
-        action_arg_nodes = []
-
-        for i, arg_types in enumerate(meta.actions_arg_types):
-            action_amount_nodes.append(
-                self._named_node_state_item(
-                    history_number=history_number,
-                    history_type=HISTORY_TYPE_META,
-                    context=META_ACTION_AMOUNT_CONTEXT,
-                    subcontext=i,
-                    parent_node_idx=0,
-                    node_idx=1,
-                    atomic_node=1,
-                    node_type=UNKNOWN_OR_EMPTY_NODE_TYPE,
-                    node_value=len(arg_types),
-                )
-            )
-
-            for j, arg_type in enumerate(arg_types):
-                action_arg_nodes.append(
-                    self._named_node_state_item(
-                        history_number=history_number,
-                        history_type=HISTORY_TYPE_META,
-                        context=META_ACTION_ARG_CONTEXT,
-                        subcontext=i,
-                        parent_node_idx=0,
-                        node_idx=j+1,
-                        atomic_node=1,
-                        node_type=arg_type,
-                        node_value=0,
-                    )
-                )
-
-        nodes: np.ndarray[np.int_, np.dtype] = np.concatenate([
-            action_amount_nodes,
-            action_arg_nodes,
-        ])
+        nodes = nodes_meta + nodes_states + nodes_actions
 
         return nodes
 
-    def _raw_main_state(self, history_number: int, state: State) -> np.ndarray[np.int_, np.dtype]:
+    def _node_data_list_meta(self, history_number: int) -> list[NodeItemData]:
+        meta = self._meta
+        nodes: list[NodeItemData] = []
+
+        for i, arg_types in enumerate(meta.actions_arg_types):
+            nodes.append(NodeItemData(
+                history_number=history_number,
+                history_type=HISTORY_TYPE_META,
+                context=META_ACTION_AMOUNT_CONTEXT,
+                subcontext=i,
+                parent_node_idx=0,
+                node_idx=1,
+                atomic_node=1,
+                node_type=UNKNOWN_OR_EMPTY_NODE_TYPE,
+                node_value=len(arg_types),
+                history_expr_id=None,
+                node=None,
+            ))
+
+            for j, arg_type in enumerate(arg_types):
+                nodes.append(NodeItemData(
+                    history_number=history_number,
+                    history_type=HISTORY_TYPE_META,
+                    context=META_ACTION_ARG_CONTEXT,
+                    subcontext=i,
+                    parent_node_idx=0,
+                    node_idx=j+1,
+                    atomic_node=1,
+                    node_type=arg_type,
+                    node_value=0,
+                    history_expr_id=None,
+                    node=None,
+                ))
+
+        return nodes
+
+    def _node_data_list_state(self, history_number: int, state: State) -> list[NodeItemData]:
         definition_keys = [d for d, _ in state.definitions or []]
         symbols = list(state.expression.free_symbols or set())
+        history_expr_id = 1
 
-        main_state_nodes, _ = self._to_node_state_array(
+        main_state_nodes, _, history_expr_id = self._node_tree_data_list(
             history_number=history_number,
             history_type=HISTORY_TYPE_STATE,
             context=STATE_MAIN_CONTEXT,
             subcontext=0,
             parent_node_idx=0,
             node_idx=1,
+            history_expr_id=history_expr_id,
             node=state.expression,
             symbols=symbols,
             definition_keys=definition_keys,
         )
 
-        definitions_nodes = self._to_context_items_array(
+        definitions_nodes, history_expr_id = self._context_node_data_list(
             history_number=history_number,
             history_type=HISTORY_TYPE_STATE,
             context=STATE_DEFINITION_CONTEXT,
             expressions=[expr for _, expr in state.definitions or []],
+            history_expr_id=history_expr_id,
             symbols=symbols,
             definition_keys=definition_keys,
         )
 
-        assumptions_nodes = self._to_context_items_array(
+        assumptions_nodes, history_expr_id = self._context_node_data_list(
             history_number=history_number,
             history_type=HISTORY_TYPE_STATE,
             context=STATE_ASSUMPTION_CONTEXT,
             expressions=list(state.assumptions or []),
+            history_expr_id=history_expr_id,
             symbols=symbols,
             definition_keys=definition_keys,
         )
 
-        nodes: np.ndarray[np.int_, np.dtype] = np.concatenate([
-            main_state_nodes,
-            definitions_nodes,
-            assumptions_nodes,
-        ])
+        nodes: list[NodeItemData] = main_state_nodes + definitions_nodes + assumptions_nodes
 
         return nodes
 
-    def _raw_action_state(
+    def _node_data_list_action(
         self,
         history_number: int,
         action_data: ActionData,
-    ) -> np.ndarray[np.int_, np.dtype]:
+    ) -> list[NodeItemData]:
         action_input = action_data.input
         action_output = action_data.output
+        history_expr_id = 1
 
-        action_node = self._named_node_state_item(
+        action_node = NodeItemData(
             history_number=history_number,
             history_type=HISTORY_TYPE_ACTION,
             context=ACTION_TYPE_CONTEXT,
@@ -260,12 +344,14 @@ class FullState:
             atomic_node=1,
             node_type=action_data.type,
             node_value=0,
+            history_expr_id=None,
+            node=None,
         )
 
-        action_arg_nodes = []
+        action_arg_nodes: list[NodeItemData] = []
 
         for i, arg in enumerate(action_input.args):
-            arg_node = self._named_node_state_item(
+            arg_node = NodeItemData(
                 history_number=history_number,
                 history_type=HISTORY_TYPE_ACTION,
                 context=ACTION_INPUT_CONTEXT,
@@ -275,17 +361,16 @@ class FullState:
                 atomic_node=1,
                 node_type=arg.type,
                 node_value=arg.value,
+                history_expr_id=None,
+                node=None,
             )
             action_arg_nodes.append(arg_node)
 
-        nodes: np.ndarray[np.int_, np.dtype] = np.concatenate([
-            [action_node],
-            action_arg_nodes,
-        ])
+        nodes: list[NodeItemData] = [action_node] + action_arg_nodes
 
         if action_output is not None:
-            if isinstance(action_output, NodeActionOutput):
-                output_idx_node = self._named_node_state_item(
+            if isinstance(action_output, SameValueNodeActionOutput):
+                output_idx_node = NodeItemData(
                     history_number=history_number,
                     history_type=HISTORY_TYPE_ACTION,
                     context=ACTION_OUTPUT_CONTEXT,
@@ -294,41 +379,44 @@ class FullState:
                     node_idx=1,
                     atomic_node=1,
                     node_type=UNKNOWN_OR_EMPTY_NODE_TYPE,
-                    node_value=action_output.node_idx,
+                    node_value=action_output.expr_id,
+                    history_expr_id=None,
+                    node=None,
                 )
 
-                output_expr_nodes, _ = self._to_node_state_array(
+                output_expr_nodes, _, history_expr_id = self._node_tree_data_list(
                     history_number=history_number,
                     history_type=HISTORY_TYPE_ACTION,
                     context=ACTION_OUTPUT_CONTEXT,
                     subcontext=ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR,
                     parent_node_idx=0,
                     node_idx=1,
+                    history_expr_id=history_expr_id,
                     node=action_output.new_node,
                     symbols=[],
                     definition_keys=[],
                 )
 
-                nodes = np.concatenate([
-                    nodes,
-                    [output_idx_node],
-                    output_expr_nodes,
-                ])
-            elif isinstance(action_output, NewDefinitionActionOutput):
-                output_idx_node = self._named_node_state_item(
+                nodes += [output_idx_node] + output_expr_nodes
+            elif isinstance(action_output, NewPartialDefinitionActionOutput):
+                output_idx_node = NodeItemData(
                     history_number=history_number,
                     history_type=HISTORY_TYPE_ACTION,
                     context=ACTION_OUTPUT_CONTEXT,
-                    subcontext=ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX,
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_PARTIAL_DEFINITION_IDX,
                     parent_node_idx=0,
                     node_idx=1,
                     atomic_node=1,
                     node_type=UNKNOWN_OR_EMPTY_NODE_TYPE,
-                    node_value=action_output.definition_idx,
+                    node_value=action_output.partial_definition_idx,
+                    history_expr_id=None,
+                    node=None,
                 )
 
-                if action_output.node_idx is not None:
-                    output_idx_node = self._named_node_state_item(
+                nodes += [output_idx_node]
+
+                if action_output.expr_id is not None:
+                    output_idx_node = NodeItemData(
                         history_number=history_number,
                         history_type=HISTORY_TYPE_ACTION,
                         context=ACTION_OUTPUT_CONTEXT,
@@ -337,29 +425,28 @@ class FullState:
                         node_idx=1,
                         atomic_node=1,
                         node_type=UNKNOWN_OR_EMPTY_NODE_TYPE,
-                        node_value=action_output.node_idx,
+                        node_value=action_output.expr_id,
+                        history_expr_id=None,
+                        node=None,
                     )
 
-                    nodes = np.concatenate([
-                        nodes,
-                        [output_idx_node],
-                    ])
+                    nodes += [output_idx_node]
             else:
                 raise NotImplementedError(f"Action output not implemented: {type(action_output)}")
 
         return nodes
 
-
-    def _to_context_items_array(
+    def _context_node_data_list(
         self,
         history_number: int,
         history_type: int,
         context: int,
         expressions: list[BaseNode | None],
+        history_expr_id: int,
         symbols: list[BaseNode],
         definition_keys: list[DefinitionKey],
-    ) -> np.ndarray[np.int_, np.dtype]:
-        nodes: np.ndarray[np.int_, np.dtype] = np.array([], dtype=np.int_)
+    ) -> tuple[list[NodeItemData], int]:
+        nodes: list[NodeItemData] = []
 
         for i, node in enumerate(expressions):
             context = STATE_DEFINITION_CONTEXT
@@ -367,26 +454,24 @@ class FullState:
             parent_node_idx = 0
             node_idx = parent_node_idx + 1
 
-            iter_nodes, node_idx = self._to_node_state_array(
+            iter_nodes, node_idx, history_expr_id = self._node_tree_data_list(
                 history_number=history_number,
                 history_type=history_type,
                 context=context,
                 subcontext=subcontext,
                 parent_node_idx=parent_node_idx,
                 node_idx=node_idx,
+                history_expr_id=history_expr_id,
                 node=node,
                 symbols=symbols,
                 definition_keys=definition_keys,
             )
 
-            nodes = np.concatenate([
-                nodes,
-                iter_nodes,
-            ])
+            nodes += iter_nodes
 
-        return nodes
+        return nodes, history_expr_id
 
-    def _to_node_state_array(
+    def _node_tree_data_list(
         self,
         history_number: int,
         history_type: int,
@@ -394,48 +479,50 @@ class FullState:
         subcontext: int,
         parent_node_idx: int,
         node_idx: int,
+        history_expr_id: int,
         node: BaseNode | None,
         symbols: list[BaseNode],
         definition_keys: list[DefinitionKey],
-    ) -> tuple[np.ndarray[np.int_, np.dtype], int]:
-        state_array = np.array(self._to_leaf_state(
+    ) -> tuple[list[NodeItemData], int, int]:
+        node_data = self._leaf_node_data(
             history_number=history_number,
             history_type=history_type,
             context=context,
             subcontext=subcontext,
             parent_node_idx=parent_node_idx,
             node_idx=node_idx,
+            history_expr_id=history_expr_id,
             node=node,
             symbols=symbols,
             definition_keys=definition_keys,
-        ))
+        )
+        nodes: list[NodeItemData] = [node_data]
 
         next_node_idx = node_idx + 1
+        next_history_expr_id = history_expr_id + 1
 
         if node is None:
-            return state_array, next_node_idx
+            return nodes, next_node_idx, next_history_expr_id
 
         for arg in node.args:
-            inner_node_array, next_node_idx = self._to_node_state_array(
-            history_number=history_number,
-            history_type=history_type,
+            inner_nodes, next_node_idx, next_history_expr_id = self._node_tree_data_list(
+                history_number=history_number,
+                history_type=history_type,
                 context=context,
                 subcontext=subcontext,
                 parent_node_idx=node_idx,
                 node_idx=next_node_idx,
+                history_expr_id=next_history_expr_id,
                 node=arg,
                 symbols=symbols,
                 definition_keys=definition_keys,
             )
 
-            state_array = np.concatenate([
-                state_array,
-                inner_node_array,
-            ])
+            nodes += inner_nodes
 
-        return state_array, next_node_idx
+        return nodes, next_node_idx, next_history_expr_id
 
-    def _to_leaf_state(
+    def _leaf_node_data(
         self,
         history_number: int,
         history_type: int,
@@ -443,10 +530,11 @@ class FullState:
         subcontext: int,
         parent_node_idx: int,
         node_idx: int,
+        history_expr_id: int | None,
         node: BaseNode | None,
         symbols: list[BaseNode],
         definition_keys: list[DefinitionKey],
-    ) -> list[int]:
+    ) -> NodeItemData:
         meta = self._meta
 
         if node is not None:
@@ -465,7 +553,7 @@ class FullState:
             node_type = UNKNOWN_OR_EMPTY_NODE_TYPE
             node_value = 0
 
-        result = self._named_node_state_item(
+        result = NodeItemData(
             history_number=history_number,
             history_type=history_type,
             context=context,
@@ -475,29 +563,8 @@ class FullState:
             atomic_node=atomic_node,
             node_type=node_type,
             node_value=node_value,
+            history_expr_id=history_expr_id,
+            node=node,
         )
-        return result
 
-    def _named_node_state_item(
-        self,
-        history_number: int,
-        history_type: int,
-        context: int,
-        subcontext: int,
-        parent_node_idx: int,
-        node_idx: int,
-        atomic_node: int,
-        node_type: int,
-        node_value: int,
-    ) -> list[int]:
-        return [
-            history_number,
-            history_type,
-            context,
-            subcontext,
-            parent_node_idx,
-            node_idx,
-            atomic_node,
-            node_type,
-            node_value,
-        ]
+        return result
