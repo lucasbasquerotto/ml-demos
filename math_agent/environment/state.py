@@ -1,15 +1,4 @@
-from utils.types import (
-    BaseNode,
-    DefinitionKey,
-    Assumption,
-    ActionOutput,
-    NewPartialDefinitionActionOutput,
-    NewDefinitionFromPartialActionOutput,
-    NewDefinitionFromNodeActionOutput,
-    ReplaceByDefinitionActionOutput,
-    ExpandDefinitionActionOutput,
-    ReformulationActionOutput,
-    PartialActionOutput)
+from utils.types import BaseNode, DefinitionKey, Assumption
 
 class State:
     def __init__(
@@ -138,7 +127,7 @@ class State:
         node, _ = self._get_node(index=index)
         return node
 
-    def _apply_action_with_new_node(self, expr_id: int, new_node: BaseNode) -> 'State':
+    def apply_new_node(self, expr_id: int, new_node: BaseNode) -> 'State':
         assert expr_id is not None, "Empty expression id"
         assert expr_id > 0, f"Invalid expression id: {expr_id}"
 
@@ -185,132 +174,6 @@ class State:
                         assumptions=self.assumptions)
 
         raise ValueError(f"Invalid expr_id: {expr_id}")
-
-    def apply(self, action: ActionOutput) -> 'State':
-        if isinstance(action, NewPartialDefinitionActionOutput):
-            partial_definition_idx = action.partial_definition_idx
-
-            assert partial_definition_idx == len(self.partial_definitions or []), \
-                f"Invalid partial definition index: {partial_definition_idx}"
-
-            partial_definitions = list(self.partial_definitions or [])
-            partial_definitions.append((DefinitionKey(), None))
-
-            return State(
-                expression=self.expression,
-                definitions=self.definitions,
-                partial_definitions=tuple(partial_definitions),
-                assumptions=self.assumptions)
-        elif isinstance(action, NewDefinitionFromPartialActionOutput):
-            definition_idx = action.definition_idx
-            assert definition_idx == len(self.definitions or []), \
-                f"Invalid definition index: {definition_idx}"
-
-            partial_definition_idx = action.partial_definition_idx
-            assert partial_definition_idx is not None, "Empty partial definition index"
-            assert partial_definition_idx >= 0, \
-                f"Invalid partial definition index: {partial_definition_idx}"
-            assert partial_definition_idx < len(self.partial_definitions or []), \
-                f"Invalid partial definition index: {partial_definition_idx}"
-
-            partial_definitions_list = list(self.partial_definitions or [])
-            key, expr = partial_definitions_list[partial_definition_idx]
-            assert expr is not None, "Empty expression for partial definition"
-
-            definitions_list = list(self.definitions or [])
-            definitions_list.append((key, expr))
-
-            partial_definitions_list = [
-                (key, expr)
-                for i, (key, expr) in enumerate(partial_definitions_list)
-                if i != partial_definition_idx
-            ]
-
-            return State(
-                expression=self.expression,
-                definitions=tuple(definitions_list),
-                partial_definitions=tuple(partial_definitions_list),
-                assumptions=self.assumptions)
-        elif isinstance(action, NewDefinitionFromNodeActionOutput):
-            definition_idx = action.definition_idx
-            assert definition_idx == len(self.definitions or []), \
-                f"Invalid definition index: {definition_idx}"
-
-            action_expr_id = action.expr_id
-            assert action_expr_id is not None, "Empty expression id"
-            assert action_expr_id > 0, f"Invalid expression id: {action_expr_id}"
-            action_node_idx = action_expr_id - 1
-            node = self.get_node(action_node_idx)
-            assert node is not None, f"Invalid node index: {action_node_idx}"
-
-            definitions_list = list(self.definitions or [])
-            definitions_list.append((DefinitionKey(), node))
-
-            return State(
-                expression=self.expression,
-                definitions=tuple(definitions_list),
-                partial_definitions=self.partial_definitions,
-                assumptions=self.assumptions)
-        elif isinstance(action, ReplaceByDefinitionActionOutput):
-            definition_idx = action.definition_idx
-            expr_id = action.expr_id
-            definitions = self.definitions
-
-            assert definitions is not None, "No definitions yet"
-            assert definition_idx is not None, "Empty definition index"
-            assert definition_idx >= 0, f"Invalid definition index: {definition_idx}"
-            assert definition_idx < len(definitions), \
-                f"Invalid definition index: {definition_idx}"
-            assert expr_id is not None, "Empty expression id"
-
-            key, definition_node = definitions[definition_idx]
-            target_node = self.get_node(expr_id)
-            assert definition_node == target_node, \
-                f"Invalid definition node: {definition_node} (expected {target_node})"
-
-            return self._apply_action_with_new_node(expr_id=expr_id, new_node=key)
-        elif isinstance(action, ExpandDefinitionActionOutput):
-            definition_idx = action.definition_idx
-            expr_id = action.expr_id
-            definitions = self.definitions
-
-            assert definitions is not None, "No definitions yet"
-            assert definition_idx is not None, "Empty definition index"
-            assert definition_idx >= 0, f"Invalid definition index: {definition_idx}"
-            assert definition_idx < len(definitions), \
-                f"Invalid definition index: {definition_idx}"
-            assert expr_id is not None, "Empty expression id"
-
-            key, definition_node = definitions[definition_idx]
-            target_node = self.get_node(expr_id)
-            assert key == target_node, f"Invalid target node: {target_node} (expected {key})"
-
-            return self._apply_action_with_new_node(expr_id=expr_id, new_node=definition_node)
-        elif isinstance(action, ReformulationActionOutput):
-            expr_id = action.expr_id
-            new_node = action.new_node
-            return self._apply_action_with_new_node(expr_id=expr_id, new_node=new_node)
-        elif isinstance(action, PartialActionOutput):
-            partial_definition_idx = action.partial_definition_idx
-            partial_definitions_list = list(self.partial_definitions or [])
-
-            assert partial_definition_idx is not None, "Empty partial definition index"
-            assert partial_definition_idx >= 0, \
-                f"Invalid partial definition index: {partial_definition_idx}"
-            assert partial_definition_idx < len(partial_definitions_list), \
-                f"Invalid partial definition index: {partial_definition_idx}"
-
-            new_node = action.new_node
-            key, _ = partial_definitions_list[partial_definition_idx]
-            partial_definitions_list[partial_definition_idx] = (key, new_node)
-
-            return State(
-                expression=self.expression,
-                definitions=self.definitions,
-                partial_definitions=tuple(partial_definitions_list),
-                assumptions=self.assumptions)
-        else:
-            raise ValueError(f"Invalid action output: {action}")
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, State):

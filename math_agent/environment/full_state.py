@@ -1,8 +1,18 @@
 import numpy as np
-from utils.types import ActionOutput, ReformulationActionOutput, NewPartialDefinitionActionOutput
 from utils.logger import logger
 from .state import State, BaseNode, DefinitionKey
-from .action import Action, ActionInput, InvalidActionException
+from .action import (
+    Action,
+    ActionInput,
+    InvalidActionException,
+    ActionOutput,
+    NewPartialDefinitionActionOutput,
+    NewDefinitionFromPartialActionOutput,
+    NewDefinitionFromNodeActionOutput,
+    ReplaceByDefinitionActionOutput,
+    ExpandDefinitionActionOutput,
+    ReformulationActionOutput,
+    PartialActionOutput)
 from .meta_env import NodeValueParams, EnvMetaInfo
 
 HISTORY_TYPE_META = 0
@@ -24,7 +34,7 @@ ACTION_STATUS_CONTEXT = 3
 
 ACTION_OUTPUT_SUBCONTEXT_PARTIAL_DEFINITION_IDX = 1
 ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX = 2
-ACTION_OUTPUT_SUBCONTEXT_NODE_IDX = 3
+ACTION_OUTPUT_SUBCONTEXT_EXPR_ID = 3
 ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR = 4
 
 ACTION_STATUS_SKIP_ID = 0
@@ -32,6 +42,16 @@ ACTION_STATUS_SUCCESS_ID = 1
 ACTION_STATUS_FAIL_ID = 2
 
 UNKNOWN_OR_EMPTY_NODE_TYPE = 0
+
+action_output_types = [
+    NewPartialDefinitionActionOutput,
+    NewDefinitionFromPartialActionOutput,
+    NewDefinitionFromNodeActionOutput,
+    ReplaceByDefinitionActionOutput,
+    ExpandDefinitionActionOutput,
+    ReformulationActionOutput,
+    PartialActionOutput,
+]
 
 # context index (e.g: main expression, definition expressions, assumptions)
 # subcontext index (e.g: which definition, which equality, which assumption)
@@ -198,8 +218,7 @@ class FullState:
         action_output: ActionOutput | None
 
         try:
-            action_output = action.output(last_state)
-            next_state = last_state.apply(action_output)
+            next_state = action.apply(last_state)
         except InvalidActionException as e:
             logger.debug(f"Invalid action: {e}")
             action_type = 0
@@ -334,7 +353,7 @@ class FullState:
         action_output = action_data.output
         history_expr_id = 1
 
-        action_node = NodeItemData(
+        action_type_node = NodeItemData(
             history_number=history_number,
             history_type=HISTORY_TYPE_ACTION,
             context=ACTION_TYPE_CONTEXT,
@@ -348,7 +367,7 @@ class FullState:
             node=None,
         )
 
-        action_arg_nodes: list[NodeItemData] = []
+        action_input_nodes: list[NodeItemData] = []
 
         for i, arg in enumerate(action_input.args):
             arg_node = NodeItemData(
@@ -364,25 +383,128 @@ class FullState:
                 history_expr_id=None,
                 node=None,
             )
-            action_arg_nodes.append(arg_node)
+            action_input_nodes.append(arg_node)
 
-        nodes: list[NodeItemData] = [action_node] + action_arg_nodes
+        action_output_nodes: list[NodeItemData] = []
 
         if action_output is not None:
-            if isinstance(action_output, ReformulationActionOutput):
-                output_idx_node = NodeItemData(
+            action_output_type = action_output_types.index(type(action_output)) + 1
+            assert action_output_type >= 1, f"Action output type not found: {type(action_output)}"
+
+            if isinstance(action_output, NewPartialDefinitionActionOutput):
+                action_output_nodes.append(NodeItemData(
                     history_number=history_number,
                     history_type=HISTORY_TYPE_ACTION,
                     context=ACTION_OUTPUT_CONTEXT,
-                    subcontext=ACTION_OUTPUT_SUBCONTEXT_NODE_IDX,
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_PARTIAL_DEFINITION_IDX,
                     parent_node_idx=0,
                     node_idx=1,
                     atomic_node=1,
-                    node_type=UNKNOWN_OR_EMPTY_NODE_TYPE,
+                    node_type=action_output_type,
+                    node_value=action_output.partial_definition_idx,
+                    history_expr_id=None,
+                    node=None,
+                ))
+            elif isinstance(action_output, NewDefinitionFromPartialActionOutput):
+                action_output_nodes.append(NodeItemData(
+                    history_number=history_number,
+                    history_type=HISTORY_TYPE_ACTION,
+                    context=ACTION_OUTPUT_CONTEXT,
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX,
+                    parent_node_idx=0,
+                    node_idx=1,
+                    atomic_node=1,
+                    node_type=action_output_type,
+                    node_value=action_output.definition_idx,
+                    history_expr_id=None,
+                    node=None,
+                ))
+
+                action_output_nodes.append(NodeItemData(
+                    history_number=history_number,
+                    history_type=HISTORY_TYPE_ACTION,
+                    context=ACTION_OUTPUT_CONTEXT,
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_PARTIAL_DEFINITION_IDX,
+                    parent_node_idx=0,
+                    node_idx=1,
+                    atomic_node=1,
+                    node_type=action_output_type,
+                    node_value=action_output.partial_definition_idx,
+                    history_expr_id=None,
+                    node=None,
+                ))
+            elif isinstance(action_output, NewDefinitionFromNodeActionOutput):
+                action_output_nodes.append(NodeItemData(
+                    history_number=history_number,
+                    history_type=HISTORY_TYPE_ACTION,
+                    context=ACTION_OUTPUT_CONTEXT,
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX,
+                    parent_node_idx=0,
+                    node_idx=1,
+                    atomic_node=1,
+                    node_type=action_output_type,
+                    node_value=action_output.definition_idx,
+                    history_expr_id=None,
+                    node=None,
+                ))
+
+                if action_output.expr_id is not None:
+                    action_output_nodes.append(NodeItemData(
+                        history_number=history_number,
+                        history_type=HISTORY_TYPE_ACTION,
+                        context=ACTION_OUTPUT_CONTEXT,
+                        subcontext=ACTION_OUTPUT_SUBCONTEXT_EXPR_ID,
+                        parent_node_idx=0,
+                        node_idx=1,
+                        atomic_node=1,
+                        node_type=action_output_type,
+                        node_value=action_output.expr_id,
+                        history_expr_id=None,
+                        node=None,
+                    ))
+            elif isinstance(action_output, ReplaceByDefinitionActionOutput):
+                action_output_nodes.append(NodeItemData(
+                    history_number=history_number,
+                    history_type=HISTORY_TYPE_ACTION,
+                    context=ACTION_OUTPUT_CONTEXT,
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX,
+                    parent_node_idx=0,
+                    node_idx=1,
+                    atomic_node=1,
+                    node_type=action_output_type,
+                    node_value=action_output.definition_idx,
+                    history_expr_id=None,
+                    node=None,
+                ))
+
+                if action_output.expr_id is not None:
+                    action_output_nodes.append(NodeItemData(
+                        history_number=history_number,
+                        history_type=HISTORY_TYPE_ACTION,
+                        context=ACTION_OUTPUT_CONTEXT,
+                        subcontext=ACTION_OUTPUT_SUBCONTEXT_EXPR_ID,
+                        parent_node_idx=0,
+                        node_idx=1,
+                        atomic_node=1,
+                        node_type=action_output_type,
+                        node_value=action_output.expr_id,
+                        history_expr_id=None,
+                        node=None,
+                    ))
+            elif isinstance(action_output, ReformulationActionOutput):
+                action_output_nodes.append(NodeItemData(
+                    history_number=history_number,
+                    history_type=HISTORY_TYPE_ACTION,
+                    context=ACTION_OUTPUT_CONTEXT,
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_EXPR_ID,
+                    parent_node_idx=0,
+                    node_idx=1,
+                    atomic_node=1,
+                    node_type=action_output_type,
                     node_value=action_output.expr_id,
                     history_expr_id=None,
                     node=None,
-                )
+                ))
 
                 output_expr_nodes, _, history_expr_id = self._node_tree_data_list(
                     history_number=history_number,
@@ -396,43 +518,12 @@ class FullState:
                     symbols=[],
                     definition_keys=[],
                 )
-
-                nodes += [output_idx_node] + output_expr_nodes
-            elif isinstance(action_output, NewPartialDefinitionActionOutput):
-                output_idx_node = NodeItemData(
-                    history_number=history_number,
-                    history_type=HISTORY_TYPE_ACTION,
-                    context=ACTION_OUTPUT_CONTEXT,
-                    subcontext=ACTION_OUTPUT_SUBCONTEXT_PARTIAL_DEFINITION_IDX,
-                    parent_node_idx=0,
-                    node_idx=1,
-                    atomic_node=1,
-                    node_type=UNKNOWN_OR_EMPTY_NODE_TYPE,
-                    node_value=action_output.partial_definition_idx,
-                    history_expr_id=None,
-                    node=None,
-                )
-
-                nodes += [output_idx_node]
-
-                if action_output.expr_id is not None:
-                    output_idx_node = NodeItemData(
-                        history_number=history_number,
-                        history_type=HISTORY_TYPE_ACTION,
-                        context=ACTION_OUTPUT_CONTEXT,
-                        subcontext=ACTION_OUTPUT_SUBCONTEXT_NODE_IDX,
-                        parent_node_idx=0,
-                        node_idx=1,
-                        atomic_node=1,
-                        node_type=UNKNOWN_OR_EMPTY_NODE_TYPE,
-                        node_value=action_output.expr_id,
-                        history_expr_id=None,
-                        node=None,
-                    )
-
-                    nodes += [output_idx_node]
+                action_output_nodes += output_expr_nodes
             else:
                 raise NotImplementedError(f"Action output not implemented: {type(action_output)}")
+
+
+        nodes: list[NodeItemData] = [action_type_node] + action_input_nodes + action_output_nodes
 
         return nodes
 

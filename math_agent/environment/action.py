@@ -1,12 +1,4 @@
-from utils.types import BaseNode, ActionArgType, ActionArgsMetaInfo, ActionOutput
-from utils.types import (
-    ActionOutput,
-    NewPartialDefinitionActionOutput,
-    NewDefinitionFromPartialActionOutput,
-    NewDefinitionFromNodeActionOutput,
-    ReplaceByDefinitionActionOutput,
-    ExpandDefinitionActionOutput,
-    PartialActionOutput)
+from utils.types import BaseNode, DefinitionKey
 from environment.state import State
 
 ###########################################################
@@ -28,21 +20,21 @@ ARG_TYPES = [
 ]
 
 ###########################################################
-####################### EXCEPTIONS ########################
+###################### ACTION INPUT #######################
 ###########################################################
 
-class InvalidActionException(Exception):
-    pass
+ActionArgType = int
 
-class InvalidActionArgException(InvalidActionException):
-    pass
+class ActionArgsMetaInfo:
+    def __init__(
+        self,
+        arg_types: list[ActionArgType],
+    ):
+        self._arg_types = arg_types
 
-class InvalidActionArgsException(InvalidActionException):
-    pass
-
-###########################################################
-######################### ACTION ##########################
-###########################################################
+    @property
+    def arg_types(self) -> list[ActionArgType]:
+        return self._arg_types
 
 class ActionArg:
     def __init__(self, type: ActionArgType, value: int):
@@ -64,6 +56,123 @@ class ActionArg:
 class ActionInput:
     def __init__(self, args: list[ActionArg]):
         self.args = args
+
+###########################################################
+###################### ACTION OUTPUT ######################
+###########################################################
+
+class NewPartialDefinitionActionOutput:
+    def __init__(self, partial_definition_idx: int):
+        self._partial_definition_idx = partial_definition_idx
+
+    @property
+    def partial_definition_idx(self) -> int:
+        return self._partial_definition_idx
+
+class NewDefinitionFromPartialActionOutput:
+    def __init__(self, definition_idx: int, partial_definition_idx: int):
+        self._definition_idx = definition_idx
+        self._partial_definition_idx = partial_definition_idx
+
+    @property
+    def definition_idx(self) -> int:
+        return self._definition_idx
+
+    @property
+    def partial_definition_idx(self) -> int:
+        return self._partial_definition_idx
+
+class NewDefinitionFromNodeActionOutput:
+    def __init__(self, definition_idx: int, expr_id: int):
+        self._definition_idx = definition_idx
+        self._expr_id = expr_id
+
+    @property
+    def definition_idx(self) -> int:
+        return self._definition_idx
+
+    @property
+    def expr_id(self) -> int:
+        return self._expr_id
+
+class ReplaceByDefinitionActionOutput:
+    def __init__(self, definition_idx: int, expr_id: int):
+        self._definition_idx = definition_idx
+        self._expr_id = expr_id
+
+    @property
+    def definition_idx(self) -> int:
+        return self._definition_idx
+
+    @property
+    def expr_id(self) -> int:
+        return self._expr_id
+
+class ExpandDefinitionActionOutput:
+    def __init__(self, definition_idx: int, expr_id: int):
+        self._definition_idx = definition_idx
+        self._expr_id = expr_id
+
+    @property
+    def definition_idx(self) -> int:
+        return self._definition_idx
+
+    @property
+    def expr_id(self) -> int:
+        return self._expr_id
+
+class ReformulationActionOutput:
+    def __init__(self, expr_id: int, new_node: BaseNode):
+        self._expr_id = expr_id
+        self._new_node = new_node
+
+    @property
+    def expr_id(self) -> int:
+        return self._expr_id
+
+    @property
+    def new_node(self) -> BaseNode:
+        return self._new_node
+
+class PartialActionOutput:
+    def __init__(self, partial_definition_idx: int, new_node: BaseNode):
+        self._partial_definition_idx = partial_definition_idx
+        self._new_node = new_node
+
+    @property
+    def partial_definition_idx(self) -> int:
+        return self._partial_definition_idx
+
+    @property
+    def new_node(self) -> BaseNode:
+        return self._new_node
+
+ActionOutput = (
+    NewPartialDefinitionActionOutput |
+    NewDefinitionFromPartialActionOutput |
+    NewDefinitionFromNodeActionOutput |
+    ReplaceByDefinitionActionOutput |
+    ExpandDefinitionActionOutput |
+    ReformulationActionOutput |
+    PartialActionOutput)
+
+###########################################################
+####################### EXCEPTIONS ########################
+###########################################################
+
+class InvalidActionException(Exception):
+    pass
+
+class InvalidActionArgException(InvalidActionException):
+    pass
+
+class InvalidActionArgsException(InvalidActionException):
+    pass
+
+
+###########################################################
+######################### ACTION ##########################
+###########################################################
 
 class Action:
 
@@ -97,6 +206,134 @@ class Action:
 
     def output(self, state: State) -> ActionOutput:
         raise NotImplementedError()
+
+    def apply(self, state: State) -> 'State':
+        output = self.output(state)
+
+        if isinstance(output, NewPartialDefinitionActionOutput):
+            partial_definition_idx = output.partial_definition_idx
+
+            assert partial_definition_idx == len(state.partial_definitions or []), \
+                f"Invalid partial definition index: {partial_definition_idx}"
+
+            partial_definitions = list(state.partial_definitions or [])
+            partial_definitions.append((DefinitionKey(), None))
+
+            return State(
+                expression=state.expression,
+                definitions=state.definitions,
+                partial_definitions=tuple(partial_definitions),
+                assumptions=state.assumptions)
+        elif isinstance(output, NewDefinitionFromPartialActionOutput):
+            definition_idx = output.definition_idx
+            assert definition_idx == len(state.definitions or []), \
+                f"Invalid definition index: {definition_idx}"
+
+            partial_definition_idx = output.partial_definition_idx
+            assert partial_definition_idx is not None, "Empty partial definition index"
+            assert partial_definition_idx >= 0, \
+                f"Invalid partial definition index: {partial_definition_idx}"
+            assert partial_definition_idx < len(state.partial_definitions or []), \
+                f"Invalid partial definition index: {partial_definition_idx}"
+
+            partial_definitions_list = list(state.partial_definitions or [])
+            key, expr = partial_definitions_list[partial_definition_idx]
+            assert expr is not None, "Empty expression for partial definition"
+
+            definitions_list = list(state.definitions or [])
+            definitions_list.append((key, expr))
+
+            partial_definitions_list = [
+                (key, expr)
+                for i, (key, expr) in enumerate(partial_definitions_list)
+                if i != partial_definition_idx
+            ]
+
+            return State(
+                expression=state.expression,
+                definitions=tuple(definitions_list),
+                partial_definitions=tuple(partial_definitions_list),
+                assumptions=state.assumptions)
+        elif isinstance(output, NewDefinitionFromNodeActionOutput):
+            definition_idx = output.definition_idx
+            assert definition_idx == len(state.definitions or []), \
+                f"Invalid definition index: {definition_idx}"
+
+            action_expr_id = output.expr_id
+            assert action_expr_id is not None, "Empty expression id"
+            assert action_expr_id > 0, f"Invalid expression id: {action_expr_id}"
+            action_node_idx = action_expr_id - 1
+            node = state.get_node(action_node_idx)
+            assert node is not None, f"Invalid node index: {action_node_idx}"
+
+            definitions_list = list(state.definitions or [])
+            definitions_list.append((DefinitionKey(), node))
+
+            return State(
+                expression=state.expression,
+                definitions=tuple(definitions_list),
+                partial_definitions=state.partial_definitions,
+                assumptions=state.assumptions)
+        elif isinstance(output, ReplaceByDefinitionActionOutput):
+            definition_idx = output.definition_idx
+            expr_id = output.expr_id
+            definitions = state.definitions
+
+            assert definitions is not None, "No definitions yet"
+            assert definition_idx is not None, "Empty definition index"
+            assert definition_idx >= 0, f"Invalid definition index: {definition_idx}"
+            assert definition_idx < len(definitions), \
+                f"Invalid definition index: {definition_idx}"
+            assert expr_id is not None, "Empty expression id"
+
+            key, definition_node = definitions[definition_idx]
+            target_node = state.get_node(expr_id)
+            assert definition_node == target_node, \
+                f"Invalid definition node: {definition_node} (expected {target_node})"
+
+            return state.apply_new_node(expr_id=expr_id, new_node=key)
+        elif isinstance(output, ExpandDefinitionActionOutput):
+            definition_idx = output.definition_idx
+            expr_id = output.expr_id
+            definitions = state.definitions
+
+            assert definitions is not None, "No definitions yet"
+            assert definition_idx is not None, "Empty definition index"
+            assert definition_idx >= 0, f"Invalid definition index: {definition_idx}"
+            assert definition_idx < len(definitions), \
+                f"Invalid definition index: {definition_idx}"
+            assert expr_id is not None, "Empty expression id"
+
+            key, definition_node = definitions[definition_idx]
+            target_node = state.get_node(expr_id)
+            assert key == target_node, f"Invalid target node: {target_node} (expected {key})"
+
+            return state.apply_new_node(expr_id=expr_id, new_node=definition_node)
+        elif isinstance(output, ReformulationActionOutput):
+            expr_id = output.expr_id
+            new_node = output.new_node
+            return state.apply_new_node(expr_id=expr_id, new_node=new_node)
+        elif isinstance(output, PartialActionOutput):
+            partial_definition_idx = output.partial_definition_idx
+            partial_definitions_list = list(state.partial_definitions or [])
+
+            assert partial_definition_idx is not None, "Empty partial definition index"
+            assert partial_definition_idx >= 0, \
+                f"Invalid partial definition index: {partial_definition_idx}"
+            assert partial_definition_idx < len(partial_definitions_list), \
+                f"Invalid partial definition index: {partial_definition_idx}"
+
+            new_node = output.new_node
+            key, _ = partial_definitions_list[partial_definition_idx]
+            partial_definitions_list[partial_definition_idx] = (key, new_node)
+
+            return State(
+                expression=state.expression,
+                definitions=state.definitions,
+                partial_definitions=tuple(partial_definitions_list),
+                assumptions=state.assumptions)
+        else:
+            raise ValueError(f"Invalid action output: {output}")
 
 ###########################################################
 ################### BASE IMPLEMENTATION ###################
@@ -194,7 +431,7 @@ class DefinitionNodeBaseAction(Action):
 ################## IMPLEMENTATION (MAIN) ##################
 ###########################################################
 
-class NewDefinitionAction(EmptyArgsBaseAction):
+class NewPartialDefinitionAction(EmptyArgsBaseAction):
 
     def output(self, state: State) -> ActionOutput:
         partial_definition_idx = len(state.partial_definitions or [])
@@ -241,7 +478,7 @@ class NewDefinitionFromPartialAction(Action):
             definition_idx=definition_idx,
             partial_definition_idx=partial_definition_idx)
 
-class NodeToDefinitionAction(SingleExprBaseAction):
+class NewDefinitionFromNodeAction(SingleExprBaseAction):
 
     def output(self, state: State) -> ActionOutput:
         expr_id = self.expr_id
