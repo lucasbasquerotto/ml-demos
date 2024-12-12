@@ -3,13 +3,13 @@ from utils.types import (
     DefinitionKey,
     Assumption,
     ActionOutput,
-    SameValueNodeActionOutput,
     NewPartialDefinitionActionOutput,
     NewDefinitionFromPartialActionOutput,
     NewDefinitionFromNodeActionOutput,
     ReplaceByDefinitionActionOutput,
-    ApplyDefinitionActionOutput,
-    UpdatePartialDefinitionActionOutput)
+    ExpandDefinitionActionOutput,
+    ReformulationActionOutput,
+    PartialActionOutput)
 
 class State:
     def __init__(
@@ -269,7 +269,7 @@ class State:
                 f"Invalid definition node: {definition_node} (expected {target_node})"
 
             return self._apply_action_with_new_node(expr_id=expr_id, new_node=key)
-        elif isinstance(action, ApplyDefinitionActionOutput):
+        elif isinstance(action, ExpandDefinitionActionOutput):
             definition_idx = action.definition_idx
             expr_id = action.expr_id
             definitions = self.definitions
@@ -286,11 +286,11 @@ class State:
             assert key == target_node, f"Invalid target node: {target_node} (expected {key})"
 
             return self._apply_action_with_new_node(expr_id=expr_id, new_node=definition_node)
-        elif isinstance(action, SameValueNodeActionOutput):
+        elif isinstance(action, ReformulationActionOutput):
             expr_id = action.expr_id
             new_node = action.new_node
             return self._apply_action_with_new_node(expr_id=expr_id, new_node=new_node)
-        elif isinstance(action, UpdatePartialDefinitionActionOutput):
+        elif isinstance(action, PartialActionOutput):
             partial_definition_idx = action.partial_definition_idx
             partial_definitions_list = list(self.partial_definitions or [])
 

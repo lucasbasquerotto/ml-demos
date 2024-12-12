@@ -67,7 +67,7 @@ class ReplaceByDefinitionActionOutput:
     def expr_id(self) -> int:
         return self._expr_id
 
-class ApplyDefinitionActionOutput:
+class ExpandDefinitionActionOutput:
     def __init__(self, definition_idx: int, expr_id: int):
         self._definition_idx = definition_idx
         self._expr_id = expr_id
@@ -80,7 +80,7 @@ class ApplyDefinitionActionOutput:
     def expr_id(self) -> int:
         return self._expr_id
 
-class SameValueNodeActionOutput:
+class ReformulationActionOutput:
     def __init__(self, expr_id: int, new_node: BaseNode):
         self._expr_id = expr_id
         self._new_node = new_node
@@ -93,7 +93,7 @@ class SameValueNodeActionOutput:
     def new_node(self) -> BaseNode:
         return self._new_node
 
-class UpdatePartialDefinitionActionOutput:
+class PartialActionOutput:
     def __init__(self, partial_definition_idx: int, new_node: BaseNode):
         self._partial_definition_idx = partial_definition_idx
         self._new_node = new_node
@@ -110,6 +110,7 @@ ActionOutput = (
     NewPartialDefinitionActionOutput |
     NewDefinitionFromPartialActionOutput |
     NewDefinitionFromNodeActionOutput |
-    ApplyDefinitionActionOutput |
-    SameValueNodeActionOutput |
-    UpdatePartialDefinitionActionOutput)
+    ReplaceByDefinitionActionOutput |
+    ExpandDefinitionActionOutput |
+    ReformulationActionOutput |
+    PartialActionOutput)

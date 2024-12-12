@@ -1,5 +1,5 @@
 import numpy as np
-from utils.types import ActionOutput, SameValueNodeActionOutput, NewPartialDefinitionActionOutput
+from utils.types import ActionOutput, ReformulationActionOutput, NewPartialDefinitionActionOutput
 from utils.logger import logger
 from .state import State, BaseNode, DefinitionKey
 from .action import Action, ActionInput, InvalidActionException
@@ -369,7 +369,7 @@ class FullState:
         nodes: list[NodeItemData] = [action_node] + action_arg_nodes
 
         if action_output is not None:
-            if isinstance(action_output, SameValueNodeActionOutput):
+            if isinstance(action_output, ReformulationActionOutput):
                 output_idx_node = NodeItemData(
                     history_number=history_number,
                     history_type=HISTORY_TYPE_ACTION,

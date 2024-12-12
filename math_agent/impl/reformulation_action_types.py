@@ -1,33 +1,73 @@
 import sympy
-from utils.types import (
-    ActionOutput,
-    SameValueNodeActionOutput,
-    NewPartialDefinitionActionOutput,
-    NewDefinitionFromPartialActionOutput,
-    NewDefinitionFromNodeActionOutput,
-    ReplaceByDefinitionActionOutput,
-    ApplyDefinitionActionOutput,
-    UpdatePartialDefinitionActionOutput)
+from utils.types import ReformulationActionOutput
 from environment.action import (
+    ACTION_ARG_TYPE_GLOBAL_EXPRESSION,
+    ACTION_ARG_TYPE_NUMBER,
+    Action,
+    ActionInput,
+    ActionArgsMetaInfo,
+    DefinitionNodeBaseAction,
     InvalidActionArgException,
     InvalidActionArgsException,
 )
 from environment.state import State
-from impl.base_action_types import (
-    EmptyArgsAction,
-    SingleNodeAction,
-    DefinitionNodeAction,
-    DoubleChildAction)
 
-class NewDefinitionAction(EmptyArgsAction):
+###########################################################
+################### BASE IMPLEMENTATION ###################
+###########################################################
 
-    def output(self, state: State) -> ActionOutput:
-        partial_definition_idx = len(state.partial_definitions or [])
-        return NewPartialDefinitionActionOutput(partial_definition_idx=partial_definition_idx)
+class DoubleChildReformulationBaseAction(Action):
 
-class DefinitionToNodeAction(DefinitionNodeAction):
+    @classmethod
+    def metadata(cls) -> ActionArgsMetaInfo:
+        return ActionArgsMetaInfo([
+            ACTION_ARG_TYPE_GLOBAL_EXPRESSION,
+            ACTION_ARG_TYPE_NUMBER,
+            ACTION_ARG_TYPE_NUMBER,
+        ])
 
-    def output(self, state: State) -> ActionOutput:
+    @classmethod
+    def create(cls, input: ActionInput) -> 'Action':
+        cls.validate_args_amount(input)
+        return cls(
+            input=input,
+            parent_expr_id=input.args[0].value,
+            arg1=input.args[1].value,
+            arg2=input.args[2].value,
+        )
+
+    def __init__(self, input: ActionInput, parent_expr_id: int, arg1: int, arg2: int):
+        self._input = input
+        self._parent_expr_id = parent_expr_id
+        self._arg1 = arg1
+        self._arg2 = arg2
+
+    @property
+    def parent_expr_id(self) -> int:
+        return self._parent_expr_id
+
+    @property
+    def arg1(self) -> int:
+        return self._arg1
+
+    @property
+    def arg2(self) -> int:
+        return self._arg2
+
+    @property
+    def input(self) -> ActionInput:
+        return self._input
+
+    def output(self, state: State) -> ReformulationActionOutput:
+        raise NotImplementedError()
+
+###########################################################
+##################### IMPLEMENTATION ######################
+###########################################################
+
+class DefinitionToNodeAction(DefinitionNodeBaseAction):
+
+    def output(self, state: State) -> ReformulationActionOutput:
         definition_idx = self.definition_idx
         expr_id = self.expr_id
         definitions = state.definitions
@@ -44,23 +84,11 @@ class DefinitionToNodeAction(DefinitionNodeAction):
         if key != target_node:
             raise InvalidActionArgException(
                 f"Invalid target node: {target_node} (expected {key})")
-        return SameValueNodeActionOutput(expr_id=expr_id, new_node=definition_node)
+        return ReformulationActionOutput(expr_id=expr_id, new_node=definition_node)
 
-class NodeToDefinitionAction(SingleNodeAction):
+class SimplifyAddAction(DoubleChildReformulationBaseAction):
 
-    def output(self, state: State) -> ActionOutput:
-        expr_id = self.expr_id
-        node = state.get_node(expr_id)
-        if not node:
-            raise InvalidActionArgException(f"Invalid node index: {expr_id}")
-        definition_idx = len(state.definitions or [])
-        return NewDefinitionFromNodeActionOutput(
-            definition_idx=definition_idx,
-            expr_id=expr_id)
-
-class SimplifyAddAction(DoubleChildAction):
-
-    def output(self, state: State) -> ActionOutput:
+    def output(self, state: State) -> ReformulationActionOutput:
         parent_expr_id = self.parent_expr_id
         arg1 = self.arg1
         arg2 = self.arg2
@@ -99,14 +127,14 @@ class SimplifyAddAction(DoubleChildAction):
         new_args = [arg for i, arg in enumerate(parent_node.args) if i not in [arg1, arg2]]
 
         if not new_args:
-            return SameValueNodeActionOutput(expr_id=parent_expr_id, new_node=sympy.Integer(0))
+            return ReformulationActionOutput(expr_id=parent_expr_id, new_node=sympy.Integer(0))
         if len(new_args) == 1:
-            return SameValueNodeActionOutput(expr_id=parent_expr_id, new_node=new_args[0])
-        return SameValueNodeActionOutput(expr_id=parent_expr_id, new_node=sympy.Add(*new_args))
+            return ReformulationActionOutput(expr_id=parent_expr_id, new_node=new_args[0])
+        return ReformulationActionOutput(expr_id=parent_expr_id, new_node=sympy.Add(*new_args))
 
-class SwapAddAction(DoubleChildAction):
+class SwapAddAction(DoubleChildReformulationBaseAction):
 
-    def output(self, state: State) -> ActionOutput:
+    def output(self, state: State) -> ReformulationActionOutput:
         parent_expr_id = self.parent_expr_id
         arg1 = self._arg1
         arg2 = self._arg2
@@ -130,4 +158,4 @@ class SwapAddAction(DoubleChildAction):
         new_args = list(parent_node.args)
         new_args[arg1], new_args[arg2] = new_args[arg2], new_args[arg1]
 
-        return SameValueNodeActionOutput(expr_id=parent_expr_id, new_node=sympy.Add(*new_args))
+        return ReformulationActionOutput(expr_id=parent_expr_id, new_node=sympy.Add(*new_args))
