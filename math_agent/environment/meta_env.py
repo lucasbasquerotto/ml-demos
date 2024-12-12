@@ -1,10 +1,30 @@
 import typing
 from .state import State, BaseNode, DefinitionKey
-from .action import Action, ActionArgType
+from .action import Action, ActionArgType, ActionInput, ActionOutput
 from .reward import RewardEvaluator
 
 T = typing.TypeVar("T", bound=BaseNode)
 V = typing.TypeVar("V", bound=int | float)
+
+class ActionData:
+    def __init__(self, type: int, input: ActionInput, output: ActionOutput | None):
+        self._type = type
+        self._input = input
+        self._output = output
+
+    @property
+    def type(self) -> int:
+        return self._type
+
+    @property
+    def input(self) -> ActionInput:
+        return self._input
+
+    @property
+    def output(self) -> ActionOutput | None:
+        return self._output
+
+StateHistoryItem = State | ActionData
 
 class NodeValueParams(typing.Generic[T]):
     def __init__(self, node: T, symbols: list[BaseNode], definition_keys: list[DefinitionKey]):
@@ -45,11 +65,11 @@ class EnvMetaInfo:
     def __init__(
         self,
         main_context: int,
-        node_types: list[NodeTypeHandler[BaseNode, int]],
+        node_handlers: list[NodeTypeHandler[BaseNode, int]],
         action_types: list[typing.Type[Action]],
     ):
         self._main_context = main_context
-        self._node_types = node_types
+        self._node_handlers = node_handlers
         self._action_types = action_types
         self._actions_arg_types = [action.metadata().arg_types for action in action_types]
 
@@ -58,8 +78,8 @@ class EnvMetaInfo:
         return self._main_context
 
     @property
-    def node_types(self) -> list[NodeTypeHandler[BaseNode, int]]:
-        return self._node_types
+    def node_handlers(self) -> list[NodeTypeHandler[BaseNode, int]]:
+        return self._node_handlers
 
     @property
     def action_types(self) -> list[typing.Type[Action]]:
@@ -73,21 +93,27 @@ class FullEnvMetaInfo(EnvMetaInfo):
     def __init__(
         self,
         main_context: int,
-        node_types: list[NodeTypeHandler[BaseNode, int]],
+        node_handlers: list[NodeTypeHandler[BaseNode, int]],
         action_types: list[typing.Type[Action]],
-        is_terminal: typing.Callable[[State], bool],
         reward_evaluator: RewardEvaluator,
+        initial_history: list[StateHistoryItem],
+        is_terminal: typing.Callable[[State], bool],
     ):
         super().__init__(
             main_context=main_context,
-            node_types=node_types,
+            node_handlers=node_handlers,
             action_types=action_types)
         self._reward_evaluator = reward_evaluator
+        self._initial_history = initial_history
         self._is_terminal = is_terminal
 
     @property
     def reward_evaluator(self) -> RewardEvaluator:
         return self._reward_evaluator
+
+    @property
+    def initial_history(self) -> list[StateHistoryItem]:
+        return self._initial_history
 
     def is_terminal(self, state: State) -> bool:
         return self._is_terminal(state)

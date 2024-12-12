@@ -530,3 +530,11 @@ class ExpandDefinitionAction(DefinitionNodeBaseAction):
             raise InvalidActionArgException(
                 f"Invalid target node: {target_node} (expected {key})")
         return ExpandDefinitionActionOutput(definition_idx=definition_idx, expr_id=expr_id)
+
+DEFAULT_ACTIONS = [
+    NewPartialDefinitionAction,
+    NewDefinitionFromPartialAction,
+    NewDefinitionFromNodeAction,
+    ReplaceByDefinitionAction,
+    ExpandDefinitionAction,
+]

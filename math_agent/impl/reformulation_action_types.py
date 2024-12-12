@@ -1,14 +1,13 @@
 import sympy
-from utils.types import ReformulationActionOutput
 from environment.action import (
     ACTION_ARG_TYPE_GLOBAL_EXPRESSION,
     ACTION_ARG_TYPE_NUMBER,
     Action,
     ActionInput,
     ActionArgsMetaInfo,
-    DefinitionNodeBaseAction,
     InvalidActionArgException,
     InvalidActionArgsException,
+    ReformulationActionOutput,
 )
 from environment.state import State
 
@@ -64,27 +63,6 @@ class DoubleChildReformulationBaseAction(Action):
 ###########################################################
 ##################### IMPLEMENTATION ######################
 ###########################################################
-
-class DefinitionToNodeAction(DefinitionNodeBaseAction):
-
-    def output(self, state: State) -> ReformulationActionOutput:
-        definition_idx = self.definition_idx
-        expr_id = self.expr_id
-        definitions = state.definitions
-        if definitions is None:
-            raise InvalidActionArgException("No definitions yet")
-        if definition_idx < 0 or definition_idx >= len(state.definitions or []):
-            raise InvalidActionArgException(f"Invalid definition index: {definition_idx}")
-        key, definition_node = definitions[definition_idx]
-        if not definition_node:
-            raise InvalidActionArgException(f"Definition {definition_idx} has no expression")
-        target_node = state.get_node(expr_id)
-        if not target_node:
-            raise InvalidActionArgException(f"Invalid target node index: {expr_id}")
-        if key != target_node:
-            raise InvalidActionArgException(
-                f"Invalid target node: {target_node} (expected {key})")
-        return ReformulationActionOutput(expr_id=expr_id, new_node=definition_node)
 
 class SimplifyAddAction(DoubleChildReformulationBaseAction):
 
