@@ -151,11 +151,14 @@ class FullState:
     def __init__(
         self,
         meta: EnvMetaInfo,
-        history: list[StateHistoryItem],
+        history: tuple[StateHistoryItem, ...],
         max_history_size: int | None = None,
     ):
-        assert len(meta.node_handlers) > 0, "No node types"
-        assert len(meta.node_handlers) == len(set(meta.node_handlers)), "Duplicate node types"
+        assert len(meta.node_types) > 0, "No node types"
+        assert len(meta.node_types) == len(set(meta.node_types)), "Duplicate node types"
+        assert len(meta.atomic_node_handlers) > 0, "No atomic node handlers"
+        assert len(meta.atomic_node_handlers) == len(set(meta.atomic_node_handlers)), \
+            "Duplicate atomic node handlers"
         assert len(meta.action_types) > 0, "No action types"
         assert len(meta.action_types) == len(set(meta.action_types)), "Duplicate action types"
         self._meta = meta
@@ -163,8 +166,8 @@ class FullState:
         self._max_history_size = max_history_size
 
     @classmethod
-    def initial_history(cls, expression: BaseNode) -> list[StateHistoryItem]:
-        return [State(expression)]
+    def initial_history(cls, expression: BaseNode) -> tuple[StateHistoryItem, ...]:
+        return (State(expression),)
 
     @property
     def last_state(self) -> State:
@@ -201,7 +204,7 @@ class FullState:
             output=action_output,
         )
 
-        history = self._history.copy()
+        history = list(self._history).copy()
         history.append(action_data)
         history.append(next_state)
 
@@ -210,7 +213,7 @@ class FullState:
 
         return FullState(
             meta=self._meta,
-            history=history,
+            history=tuple(history),
             max_history_size=self._max_history_size,
         )
 
@@ -603,14 +606,17 @@ class FullState:
         meta = self._meta
 
         if node is not None:
-            handler_idx, handler = next(
-                (i, h)
-                for i, h in enumerate(meta.node_handlers)
+            node_type_idxs = [i for i, t in enumerate(meta.node_types) if isinstance(node, t)]
+            assert len(node_type_idxs) == 1, f"Invalid node type: {type(node)}"
+            node_type_idx = node_type_idxs[0]
+            handler = next(
+                h
+                for h in meta.atomic_node_handlers
                 if isinstance(node, h.node_type))
             assert handler is not None, f"Handler not found for node: {node}"
             atomic_node = int(len(node.args) == 0)
             # node_type = 0 is for special node types (e.g: unknown, empty)
-            node_type = handler_idx + 1
+            node_type = node_type_idx + 1
             node_value = handler.get_value(NodeValueParams(
                 node=node,
                 symbols=symbols,

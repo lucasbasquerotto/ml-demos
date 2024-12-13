@@ -106,6 +106,7 @@ class State:
         index: int,
         parent: bool = False,
     ) -> tuple[BaseNode | None, int | None]:
+        initial_index = index
         definitions: list[BaseNode] = [
             expr
             for _, expr in self.definitions or []]
@@ -117,7 +118,7 @@ class State:
         for expr in [self.expression] + definitions + partial_definitions:
             node, index, child_index = self._index_to_node(
                 root=expr, index=index, parent=parent)
-            assert index >= 0, f"Invalid index for node: {index}"
+            assert index >= 0, f"Invalid index for node: {initial_index}"
             if index == 0:
                 return node, child_index
 
@@ -126,6 +127,57 @@ class State:
     def get_node(self, index: int) -> BaseNode | None:
         node, _ = self._get_node(index=index)
         return node
+
+    def get_expression_node_info(
+        self,
+        root: BaseNode | None,
+        node_idx: int,
+    ) -> tuple[BaseNode | None, BaseNode | None, int | None]:
+        if node_idx == 1:
+            return root, None, None
+
+        assert root is not None, "Invalid root"
+
+        index = node_idx
+
+        parent_node, index, child_index = self._index_to_node(
+            root=root, index=index, parent=True)
+
+        assert index >= 0, f"Invalid index for node: {node_idx}"
+        if index == 0:
+            assert parent_node is not None, "Invalid parent node"
+            assert child_index is not None, "Invalid child index"
+            node = parent_node.args[child_index]
+            return node, parent_node, child_index
+
+        return None, None, None
+
+    def replace_partial_definition(
+        self,
+        partial_definition_idx: int,
+        node_idx: int,
+        new_node: BaseNode,
+    ) -> 'State':
+        partial_definitions_list = list(self.partial_definitions or [])
+        assert partial_definition_idx >= 0, \
+            f"Invalid partial definition: {partial_definition_idx}"
+        assert partial_definition_idx < len(partial_definitions_list), \
+            f"Invalid partial definition: {partial_definition_idx}"
+        key, root = partial_definitions_list[partial_definition_idx]
+        assert root is not None, f"Invalid partial definition: {partial_definition_idx}"
+        new_root, index = self._replace_node_index(
+            root=root,
+            index=node_idx,
+            new_node=new_node)
+        assert index == 0, f"Node {node_idx} not found " \
+            + f"in partial definition: {partial_definition_idx}"
+        assert new_root is not None, "Invalid new root node"
+        partial_definitions_list[partial_definition_idx] = (key, new_root)
+        return State(
+            expression=self.expression,
+            definitions=self.definitions,
+            partial_definitions=tuple(partial_definitions_list),
+            assumptions=self.assumptions)
 
     def apply_new_node(self, expr_id: int, new_node: BaseNode) -> 'State':
         assert expr_id is not None, "Empty expression id"

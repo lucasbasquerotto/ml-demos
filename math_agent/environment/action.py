@@ -7,7 +7,7 @@ from environment.state import State
 
 ACTION_ARG_TYPE_PARTIAL_DEFINITION = 1
 ACTION_ARG_TYPE_DEFINITION = 2
-ACTION_ARG_TYPE_GLOBAL_EXPRESSION = 1
+ACTION_ARG_TYPE_GLOBAL_EXPRESSION = 3
 ACTION_ARG_TYPE_NODE = 4
 ACTION_ARG_TYPE_NUMBER = 5
 
@@ -28,12 +28,12 @@ ActionArgType = int
 class ActionArgsMetaInfo:
     def __init__(
         self,
-        arg_types: list[ActionArgType],
+        arg_types: tuple[ActionArgType, ...],
     ):
         self._arg_types = arg_types
 
     @property
-    def arg_types(self) -> list[ActionArgType]:
+    def arg_types(self) -> tuple[ActionArgType, ...]:
         return self._arg_types
 
 class ActionArg:
@@ -54,7 +54,7 @@ class ActionArg:
         return self._value
 
 class ActionInput:
-    def __init__(self, args: list[ActionArg]):
+    def __init__(self, args: tuple[ActionArg, ...]):
         self.args = args
 
 ###########################################################
@@ -135,13 +135,18 @@ class ReformulationActionOutput:
         return self._new_node
 
 class PartialActionOutput:
-    def __init__(self, partial_definition_idx: int, new_node: BaseNode):
+    def __init__(self, partial_definition_idx: int, node_idx: int, new_node: BaseNode):
         self._partial_definition_idx = partial_definition_idx
+        self._node_idx = node_idx
         self._new_node = new_node
 
     @property
     def partial_definition_idx(self) -> int:
         return self._partial_definition_idx
+
+    @property
+    def node_idx(self) -> int:
+        return self._node_idx
 
     @property
     def new_node(self) -> BaseNode:
@@ -194,7 +199,7 @@ class Action:
             ActionArg(type, value)
             for type, value in zip(cls.metadata().arg_types, action)
         ]
-        return ActionInput(args)
+        return ActionInput(tuple(args))
 
     @classmethod
     def create(cls, input: ActionInput) -> 'Action':
@@ -315,6 +320,8 @@ class Action:
             return state.apply_new_node(expr_id=expr_id, new_node=new_node)
         elif isinstance(output, PartialActionOutput):
             partial_definition_idx = output.partial_definition_idx
+            node_idx = output.node_idx
+            new_node = output.new_node
             partial_definitions_list = list(state.partial_definitions or [])
 
             assert partial_definition_idx is not None, "Empty partial definition index"
@@ -323,15 +330,13 @@ class Action:
             assert partial_definition_idx < len(partial_definitions_list), \
                 f"Invalid partial definition index: {partial_definition_idx}"
 
-            new_node = output.new_node
             key, _ = partial_definitions_list[partial_definition_idx]
             partial_definitions_list[partial_definition_idx] = (key, new_node)
 
-            return State(
-                expression=state.expression,
-                definitions=state.definitions,
-                partial_definitions=tuple(partial_definitions_list),
-                assumptions=state.assumptions)
+            return state.replace_partial_definition(
+                partial_definition_idx=partial_definition_idx,
+                node_idx=node_idx,
+                new_node=new_node)
         else:
             raise ValueError(f"Invalid action output: {output}")
 
@@ -343,7 +348,7 @@ class EmptyArgsBaseAction(Action):
 
     @classmethod
     def metadata(cls) -> ActionArgsMetaInfo:
-        return ActionArgsMetaInfo([])
+        return ActionArgsMetaInfo(tuple())
 
     @classmethod
     def create(cls, input: ActionInput) -> 'Action':
@@ -364,7 +369,7 @@ class SingleExprBaseAction(Action):
 
     @classmethod
     def metadata(cls) -> ActionArgsMetaInfo:
-        return ActionArgsMetaInfo([ACTION_ARG_TYPE_GLOBAL_EXPRESSION])
+        return ActionArgsMetaInfo((ACTION_ARG_TYPE_GLOBAL_EXPRESSION,))
 
     @classmethod
     def create(cls, input: ActionInput) -> 'Action':
@@ -393,10 +398,10 @@ class DefinitionNodeBaseAction(Action):
 
     @classmethod
     def metadata(cls) -> ActionArgsMetaInfo:
-        return ActionArgsMetaInfo([
+        return ActionArgsMetaInfo((
             ACTION_ARG_TYPE_DEFINITION,
             ACTION_ARG_TYPE_GLOBAL_EXPRESSION,
-        ])
+        ))
 
     @classmethod
     def create(cls, input: ActionInput) -> 'Action':
@@ -441,7 +446,7 @@ class NewDefinitionFromPartialAction(Action):
 
     @classmethod
     def metadata(cls) -> ActionArgsMetaInfo:
-        return ActionArgsMetaInfo([ACTION_ARG_TYPE_PARTIAL_DEFINITION])
+        return ActionArgsMetaInfo((ACTION_ARG_TYPE_PARTIAL_DEFINITION,))
 
     @classmethod
     def create(cls, input: ActionInput) -> 'Action':

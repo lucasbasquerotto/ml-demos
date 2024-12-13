@@ -65,43 +65,53 @@ class EnvMetaInfo:
     def __init__(
         self,
         main_context: int,
-        node_handlers: list[NodeTypeHandler[BaseNode, int]],
-        action_types: list[typing.Type[Action]],
+        node_types: tuple[typing.Type[BaseNode], ...],
+        atomic_node_handlers: tuple[NodeTypeHandler[BaseNode, int], ...],
+        action_types: tuple[typing.Type[Action], ...],
     ):
         self._main_context = main_context
-        self._node_handlers = node_handlers
+        self._node_types = node_types
+        self._atomic_node_handlers = atomic_node_handlers
         self._action_types = action_types
-        self._actions_arg_types = [action.metadata().arg_types for action in action_types]
+        self._actions_arg_types = tuple([
+            action.metadata().arg_types for action in action_types
+        ])
 
     @property
     def main_context(self) -> int:
         return self._main_context
 
     @property
-    def node_handlers(self) -> list[NodeTypeHandler[BaseNode, int]]:
-        return self._node_handlers
+    def node_types(self) -> tuple[typing.Type[BaseNode], ...]:
+        return self._node_types
 
     @property
-    def action_types(self) -> list[typing.Type[Action]]:
+    def atomic_node_handlers(self) -> tuple[NodeTypeHandler[BaseNode, int], ...]:
+        return self._atomic_node_handlers
+
+    @property
+    def action_types(self) -> tuple[typing.Type[Action], ...]:
         return self._action_types
 
     @property
-    def actions_arg_types(self) -> list[list[ActionArgType]]:
+    def actions_arg_types(self) -> tuple[tuple[ActionArgType, ...], ...]:
         return self._actions_arg_types
 
 class FullEnvMetaInfo(EnvMetaInfo):
     def __init__(
         self,
         main_context: int,
-        node_handlers: list[NodeTypeHandler[BaseNode, int]],
-        action_types: list[typing.Type[Action]],
+        node_types: tuple[typing.Type[BaseNode], ...],
+        atomic_node_handlers: tuple[NodeTypeHandler[BaseNode, int], ...],
+        action_types: tuple[typing.Type[Action], ...],
         reward_evaluator: RewardEvaluator,
-        initial_history: list[StateHistoryItem],
+        initial_history: tuple[StateHistoryItem, ...],
         is_terminal: typing.Callable[[State], bool],
     ):
         super().__init__(
             main_context=main_context,
-            node_handlers=node_handlers,
+            node_types=node_types,
+            atomic_node_handlers=atomic_node_handlers,
             action_types=action_types)
         self._reward_evaluator = reward_evaluator
         self._initial_history = initial_history
@@ -112,7 +122,7 @@ class FullEnvMetaInfo(EnvMetaInfo):
         return self._reward_evaluator
 
     @property
-    def initial_history(self) -> list[StateHistoryItem]:
+    def initial_history(self) -> tuple[StateHistoryItem, ...]:
         return self._initial_history
 
     def is_terminal(self, state: State) -> bool:

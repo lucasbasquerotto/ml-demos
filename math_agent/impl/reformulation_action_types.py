@@ -10,6 +10,7 @@ from environment.action import (
     ReformulationActionOutput,
 )
 from environment.state import State
+from impl import node_types
 
 ###########################################################
 ################### BASE IMPLEMENTATION ###################
@@ -19,11 +20,11 @@ class DoubleChildReformulationBaseAction(Action):
 
     @classmethod
     def metadata(cls) -> ActionArgsMetaInfo:
-        return ActionArgsMetaInfo([
+        return ActionArgsMetaInfo((
             ACTION_ARG_TYPE_GLOBAL_EXPRESSION,
             ACTION_ARG_TYPE_NUMBER,
             ACTION_ARG_TYPE_NUMBER,
-        ])
+        ))
 
     @classmethod
     def create(cls, input: ActionInput) -> 'Action':
@@ -121,7 +122,7 @@ class SwapAddAction(DoubleChildReformulationBaseAction):
 
         if not parent_node:
             raise InvalidActionArgException(f"Invalid parent node index: {parent_expr_id}")
-        if not isinstance(parent_node, sympy.Add):
+        if not isinstance(parent_node, node_types.Add):
             raise InvalidActionArgException(f"Invalid parent node type: {type(parent_node)}")
         if not isinstance(arg1, int) or not isinstance(arg2, int):
             raise InvalidActionArgsException(
@@ -136,4 +137,4 @@ class SwapAddAction(DoubleChildReformulationBaseAction):
         new_args = list(parent_node.args)
         new_args[arg1], new_args[arg2] = new_args[arg2], new_args[arg1]
 
-        return ReformulationActionOutput(expr_id=parent_expr_id, new_node=sympy.Add(*new_args))
+        return ReformulationActionOutput(expr_id=parent_expr_id, new_node=node_types.Add(*new_args))
