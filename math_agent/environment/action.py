@@ -1,22 +1,24 @@
 from utils.types import BaseNode, DefinitionKey
-from environment.state import State
+from environment.state import State, ArgGroup
 
 ###########################################################
 ######################## CONSTANTS ########################
 ###########################################################
 
 ACTION_ARG_TYPE_PARTIAL_DEFINITION = 1
-ACTION_ARG_TYPE_DEFINITION = 2
-ACTION_ARG_TYPE_GLOBAL_EXPRESSION = 3
-ACTION_ARG_TYPE_NODE = 4
-ACTION_ARG_TYPE_NUMBER = 5
+ACTION_ARG_TYPE_ARG_GROUP = 2
+ACTION_ARG_TYPE_ARG_IDX = 3
+ACTION_ARG_TYPE_DEFINITION = 4
+ACTION_ARG_TYPE_GLOBAL_EXPRESSION = 5
+ACTION_ARG_TYPE_NODE = 6
+ACTION_ARG_TYPE_INT = 7
 
 ARG_TYPES = [
     ACTION_ARG_TYPE_PARTIAL_DEFINITION,
     ACTION_ARG_TYPE_DEFINITION,
     ACTION_ARG_TYPE_GLOBAL_EXPRESSION,
     ACTION_ARG_TYPE_NODE,
-    ACTION_ARG_TYPE_NUMBER,
+    ACTION_ARG_TYPE_INT,
 ]
 
 ###########################################################
@@ -82,6 +84,37 @@ class NewPartialDefinitionActionOutput:
     def partial_definition_idx(self) -> int:
         return self._partial_definition_idx
 
+class NewArgGroupActionOutput:
+    def __init__(self, arg_group_idx: int, amount: int):
+        self._arg_group_idx = arg_group_idx
+        self._amount = amount
+
+    @property
+    def arg_group_idx(self) -> int:
+        return self._arg_group_idx
+
+    @property
+    def amount(self) -> int:
+        return self._amount
+
+class ArgFromExprActionOutput:
+    def __init__(self, arg_group_idx: int, arg_idx: int, new_node: BaseNode):
+        self._arg_group_idx = arg_group_idx
+        self._arg_idx = arg_idx
+        self._new_node = new_node
+
+    @property
+    def arg_group_idx(self) -> int:
+        return self._arg_group_idx
+
+    @property
+    def arg_idx(self) -> int:
+        return self._arg_idx
+
+    @property
+    def new_node(self) -> BaseNode:
+        return self._new_node
+
 class NewDefinitionFromPartialActionOutput:
     def __init__(self, definition_idx: int, partial_definition_idx: int):
         self._definition_idx = definition_idx
@@ -95,18 +128,18 @@ class NewDefinitionFromPartialActionOutput:
     def partial_definition_idx(self) -> int:
         return self._partial_definition_idx
 
-class NewDefinitionFromNodeActionOutput:
-    def __init__(self, definition_idx: int, expr_id: int):
+class NewDefinitionFromExprActionOutput:
+    def __init__(self, definition_idx: int, new_node: BaseNode):
         self._definition_idx = definition_idx
-        self._expr_id = expr_id
+        self._new_node = new_node
 
     @property
     def definition_idx(self) -> int:
         return self._definition_idx
 
     @property
-    def expr_id(self) -> int:
-        return self._expr_id
+    def new_node(self) -> BaseNode:
+        return self._new_node
 
 class ReplaceByDefinitionActionOutput:
     def __init__(self, definition_idx: int, expr_id: int):
@@ -167,8 +200,10 @@ class PartialActionOutput:
 
 ActionOutput = (
     NewPartialDefinitionActionOutput |
+    NewArgGroupActionOutput |
+    ArgFromExprActionOutput |
     NewDefinitionFromPartialActionOutput |
-    NewDefinitionFromNodeActionOutput |
+    NewDefinitionFromExprActionOutput |
     ReplaceByDefinitionActionOutput |
     ExpandDefinitionActionOutput |
     ReformulationActionOutput |
@@ -241,6 +276,50 @@ class Action:
                 expression=state.expression,
                 definitions=state.definitions,
                 partial_definitions=tuple(partial_definitions),
+                arg_groups=state.arg_groups,
+                assumptions=state.assumptions)
+        elif isinstance(output, NewArgGroupActionOutput):
+            arg_group_idx = output.arg_group_idx
+            amount = output.amount
+
+            assert arg_group_idx == len(state.arg_groups or []), \
+                f"Invalid arg group index: {arg_group_idx}"
+
+            arg_groups = list(state.arg_groups or [])
+            arg_groups.append(ArgGroup(amount=amount, expressions=tuple([None] * amount)))
+
+            return State(
+                expression=state.expression,
+                definitions=state.definitions,
+                partial_definitions=state.partial_definitions,
+                arg_groups=tuple(arg_groups),
+                assumptions=state.assumptions)
+        elif isinstance(output, ArgFromExprActionOutput):
+            arg_group_idx = output.arg_group_idx
+            arg_idx = output.arg_idx
+            new_node = output.new_node
+
+            arg_groups = list(state.arg_groups or [])
+            if len(arg_groups) == 0:
+                raise InvalidActionArgException("No arg groups yet")
+            if arg_group_idx < 0 or arg_group_idx >= len(arg_groups):
+                raise InvalidActionArgException(f"Invalid arg group index: {arg_group_idx}")
+            arg_group = arg_groups[arg_group_idx]
+            if arg_idx < 0 or arg_idx >= arg_group.amount:
+                raise InvalidActionArgException(f"Invalid arg index: {arg_idx}")
+
+            arg_groups_list = list(arg_groups)
+            arg_group_list = list(arg_group.expressions)
+            arg_group_list[arg_idx] = new_node
+            arg_groups_list[arg_group_idx] = ArgGroup(
+                amount=arg_group.amount,
+                expressions=tuple(arg_group_list))
+
+            return State(
+                expression=state.expression,
+                definitions=state.definitions,
+                partial_definitions=state.partial_definitions,
+                arg_groups=tuple(arg_groups_list),
                 assumptions=state.assumptions)
         elif isinstance(output, NewDefinitionFromPartialActionOutput):
             definition_idx = output.definition_idx
@@ -271,26 +350,24 @@ class Action:
                 expression=state.expression,
                 definitions=tuple(definitions_list),
                 partial_definitions=tuple(partial_definitions_list),
+                arg_groups=state.arg_groups,
                 assumptions=state.assumptions)
-        elif isinstance(output, NewDefinitionFromNodeActionOutput):
+        elif isinstance(output, NewDefinitionFromExprActionOutput):
             definition_idx = output.definition_idx
             assert definition_idx == len(state.definitions or []), \
                 f"Invalid definition index: {definition_idx}"
 
-            action_expr_id = output.expr_id
-            assert action_expr_id is not None, "Empty expression id"
-            assert action_expr_id > 0, f"Invalid expression id: {action_expr_id}"
-            action_node_idx = action_expr_id - 1
-            node = state.get_node(action_node_idx)
-            assert node is not None, f"Invalid node index: {action_node_idx}"
+            new_node = output.new_node
+            assert new_node is not None, "Invalid new node"
 
             definitions_list = list(state.definitions or [])
-            definitions_list.append((DefinitionKey(), node))
+            definitions_list.append((DefinitionKey(), new_node))
 
             return State(
                 expression=state.expression,
                 definitions=tuple(definitions_list),
                 partial_definitions=state.partial_definitions,
+                arg_groups=state.arg_groups,
                 assumptions=state.assumptions)
         elif isinstance(output, ReplaceByDefinitionActionOutput):
             definition_idx = output.definition_idx
@@ -378,6 +455,80 @@ class EmptyArgsBaseAction(Action):
     def output(self, state: State) -> ActionOutput:
         raise NotImplementedError()
 
+class IntInputBaseAction(Action):
+
+    @classmethod
+    def metadata(cls) -> ActionArgsMetaInfo:
+        return ActionArgsMetaInfo((ACTION_ARG_TYPE_INT,))
+
+    @classmethod
+    def create(cls, input: ActionInput) -> 'Action':
+        cls.validate_args_amount(input)
+        return cls(
+            input=input,
+            value=input.args[0].value,
+        )
+
+    def __init__(self, input: ActionInput, value: int):
+        self._input = input
+        self._value = value
+
+    @property
+    def value(self) -> int:
+        return self._value
+
+    @property
+    def input(self) -> ActionInput:
+        return self._input
+
+    def output(self, state: State) -> ActionOutput:
+        raise NotImplementedError()
+
+class ArgFromExprBaseAction(Action):
+
+    @classmethod
+    def metadata(cls) -> ActionArgsMetaInfo:
+        return ActionArgsMetaInfo((
+            ACTION_ARG_TYPE_ARG_GROUP,
+            ACTION_ARG_TYPE_ARG_IDX,
+            ACTION_ARG_TYPE_GLOBAL_EXPRESSION,
+        ))
+
+    @classmethod
+    def create(cls, input: ActionInput) -> 'Action':
+        cls.validate_args_amount(input)
+        return cls(
+            input=input,
+            arg_group_idx=input.args[0].value,
+            arg_idx=input.args[1].value,
+            expr_id=input.args[1].value,
+        )
+
+    def __init__(self, input: ActionInput, arg_group_idx: int, arg_idx: int, expr_id: int):
+        self._input = input
+        self._arg_group_idx = arg_group_idx
+        self._arg_idx = arg_idx
+        self._expr_id = expr_id
+
+    @property
+    def arg_group_idx(self) -> int:
+        return self._arg_group_idx
+
+    @property
+    def arg_idx(self) -> int:
+        return self._arg_idx
+
+    @property
+    def expr_id(self) -> int:
+        return self._expr_id
+
+    @property
+    def input(self) -> ActionInput:
+        return self._input
+
+    def output(self, state: State) -> ArgFromExprActionOutput:
+        raise NotImplementedError()
+
 class SingleExprBaseAction(Action):
 
     @classmethod
@@ -407,7 +558,7 @@ class SingleExprBaseAction(Action):
     def output(self, state: State) -> ActionOutput:
         raise NotImplementedError()
 
-class DefinitionNodeBaseAction(Action):
+class DefinitionExprBaseAction(Action):
 
     @classmethod
     def metadata(cls) -> ActionArgsMetaInfo:
@@ -455,6 +606,33 @@ class NewPartialDefinitionAction(EmptyArgsBaseAction):
         partial_definition_idx = len(state.partial_definitions or [])
         return NewPartialDefinitionActionOutput(partial_definition_idx=partial_definition_idx)
 
+class NewArgGroupAction(IntInputBaseAction):
+
+    def output(self, state: State) -> ActionOutput:
+        arg_group_idx = len(state.arg_groups or [])
+        return NewArgGroupActionOutput(arg_group_idx=arg_group_idx, amount=self.value)
+
+class ArgFromExprAction(ArgFromExprBaseAction):
+
+    def output(self, state: State) -> ArgFromExprActionOutput:
+        arg_group_idx = self.arg_group_idx
+        arg_idx = self.arg_idx
+        expr_id = self.expr_id
+        arg_groups = state.arg_groups
+        if arg_groups is None:
+            raise InvalidActionArgException("No arg groups yet")
+        if arg_group_idx < 0 or arg_group_idx >= len(arg_groups):
+            raise InvalidActionArgException(f"Invalid arg group index: {arg_group_idx}")
+        arg_group = arg_groups[arg_group_idx]
+        if arg_idx < 0 or arg_idx >= arg_group.amount:
+            raise InvalidActionArgException(f"Invalid arg index: {arg_idx}")
+        new_node = state.get_node(expr_id)
+        assert new_node is not None, f"Invalid node index: {expr_id}"
+        return ArgFromExprActionOutput(
+            arg_group_idx=arg_group_idx,
+            arg_idx=arg_idx,
+            new_node=new_node)
+
 class NewDefinitionFromPartialAction(Action):
 
     @classmethod
@@ -500,15 +678,15 @@ class NewDefinitionFromNodeAction(SingleExprBaseAction):
 
     def output(self, state: State) -> ActionOutput:
         expr_id = self.expr_id
-        node = state.get_node(expr_id)
-        if not node:
+        new_node = state.get_node(expr_id)
+        if not new_node:
             raise InvalidActionArgException(f"Invalid node index: {expr_id}")
         definition_idx = len(state.definitions or [])
-        return NewDefinitionFromNodeActionOutput(
+        return NewDefinitionFromExprActionOutput(
             definition_idx=definition_idx,
-            expr_id=expr_id)
+            new_node=new_node)
 
-class ReplaceByDefinitionAction(DefinitionNodeBaseAction):
+class ReplaceByDefinitionAction(DefinitionExprBaseAction):
 
     def output(self, state: State) -> ActionOutput:
         definition_idx = self.definition_idx
@@ -528,7 +706,7 @@ class ReplaceByDefinitionAction(DefinitionNodeBaseAction):
                 + f"(expected {definition_node} from definition {key})")
         return ReplaceByDefinitionActionOutput(definition_idx=definition_idx, expr_id=expr_id)
 
-class ExpandDefinitionAction(DefinitionNodeBaseAction):
+class ExpandDefinitionAction(DefinitionExprBaseAction):
 
     def output(self, state: State) -> ActionOutput:
         definition_idx = self.definition_idx

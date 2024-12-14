@@ -7,8 +7,10 @@ from .action import (
     InvalidActionException,
     ActionOutput,
     NewPartialDefinitionActionOutput,
+    NewArgGroupActionOutput,
+    ArgFromExprActionOutput,
     NewDefinitionFromPartialActionOutput,
-    NewDefinitionFromNodeActionOutput,
+    NewDefinitionFromExprActionOutput,
     ReplaceByDefinitionActionOutput,
     ExpandDefinitionActionOutput,
     ReformulationActionOutput,
@@ -49,7 +51,7 @@ UNKNOWN_OR_EMPTY_FIELD = 0
 action_output_types = [
     NewPartialDefinitionActionOutput,
     NewDefinitionFromPartialActionOutput,
-    NewDefinitionFromNodeActionOutput,
+    NewDefinitionFromExprActionOutput,
     ReplaceByDefinitionActionOutput,
     ExpandDefinitionActionOutput,
     ReformulationActionOutput,
@@ -181,7 +183,13 @@ class FullState:
 
     @classmethod
     def initial_history(cls, expression: BaseNode) -> tuple[StateHistoryItem, ...]:
-        return (State(expression),)
+        state = State(
+            expression=expression,
+            definitions=None,
+            partial_definitions=None,
+            arg_groups=None,
+            assumptions=None)
+        return (state,)
 
     @property
     def last_state(self) -> State:
@@ -433,6 +441,20 @@ class FullState:
                     node=None,
                 )
 
+            def create_node_tree(node: BaseNode, history_expr_id: int):
+                output_expr_nodes, history_expr_id = self._node_tree_data_list(
+                    history_number=history_number,
+                    history_type=HISTORY_TYPE_ACTION,
+                    context=ACTION_OUTPUT_CONTEXT,
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR,
+                    item=UNKNOWN_OR_EMPTY_FIELD,
+                    history_expr_id=history_expr_id,
+                    node=node,
+                    symbols=[],
+                    definition_keys=[],
+                )
+                return output_expr_nodes, history_expr_id
+
             if isinstance(action_output, NewPartialDefinitionActionOutput):
                 action_output_nodes.append(create_node(
                     subcontext=ACTION_OUTPUT_SUBCONTEXT_PARTIAL_DEFINITION_IDX,
@@ -448,17 +470,19 @@ class FullState:
                     subcontext=ACTION_OUTPUT_SUBCONTEXT_PARTIAL_DEFINITION_IDX,
                     node_value=action_output.partial_definition_idx,
                 ))
-            elif isinstance(action_output, NewDefinitionFromNodeActionOutput):
+            elif isinstance(action_output, NewDefinitionFromExprActionOutput):
                 action_output_nodes.append(create_node(
                     subcontext=ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX,
                     node_value=action_output.definition_idx,
                 ))
 
-                if action_output.expr_id is not None:
-                    action_output_nodes.append(create_node(
-                        subcontext=ACTION_OUTPUT_SUBCONTEXT_EXPR_ID,
-                        node_value=action_output.expr_id,
-                    ))
+                assert action_output.new_node is not None
+
+                output_expr_nodes, history_expr_id = create_node_tree(
+                    node=action_output.new_node,
+                    history_expr_id=history_expr_id,
+                )
+                action_output_nodes += output_expr_nodes
             elif isinstance(action_output, ReplaceByDefinitionActionOutput):
                 action_output_nodes.append(create_node(
                     subcontext=ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX,
@@ -476,16 +500,9 @@ class FullState:
                     node_value=action_output.expr_id,
                 ))
 
-                output_expr_nodes, history_expr_id = self._node_tree_data_list(
-                    history_number=history_number,
-                    history_type=HISTORY_TYPE_ACTION,
-                    context=ACTION_OUTPUT_CONTEXT,
-                    subcontext=ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR,
-                    item=UNKNOWN_OR_EMPTY_FIELD,
-                    history_expr_id=history_expr_id,
+                output_expr_nodes, history_expr_id = create_node_tree(
                     node=action_output.new_node,
-                    symbols=[],
-                    definition_keys=[],
+                    history_expr_id=history_expr_id,
                 )
                 action_output_nodes += output_expr_nodes
             else:
