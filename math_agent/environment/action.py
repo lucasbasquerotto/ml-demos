@@ -36,6 +36,19 @@ class ActionArgsMetaInfo:
     def arg_types(self) -> tuple[ActionArgType, ...]:
         return self._arg_types
 
+class ActionMetaInfo(ActionArgsMetaInfo):
+    def __init__(
+        self,
+        type_idx: int,
+        arg_types: tuple[ActionArgType, ...],
+    ):
+        super().__init__(arg_types=arg_types)
+        self._type_idx = type_idx
+
+    @property
+    def type_idx(self) -> int:
+        return self._type_idx
+
 class ActionArg:
     def __init__(self, type: ActionArgType, value: int):
         if type not in ARG_TYPES:
@@ -333,7 +346,7 @@ class Action:
             key, _ = partial_definitions_list[partial_definition_idx]
             partial_definitions_list[partial_definition_idx] = (key, new_node)
 
-            return state.replace_partial_definition(
+            return state.change_partial_definition(
                 partial_definition_idx=partial_definition_idx,
                 node_idx=node_idx,
                 new_node=new_node)

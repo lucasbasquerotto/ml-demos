@@ -1,16 +1,33 @@
 from utils.types import BaseNode, DefinitionKey, Assumption
 
+class ArgGroup:
+    def __init__(self, amount, expressions: tuple[BaseNode | None, ...]):
+        assert amount == len(expressions), \
+            f"Invalid amount of expressions: {amount} != {len(expressions)}"
+        self._amount = amount
+        self._expressions = expressions
+
+    @property
+    def amount(self) -> int:
+        return self._amount
+
+    @property
+    def expressions(self) -> tuple[BaseNode | None, ...]:
+        return self._expressions
+
 class State:
     def __init__(
         self,
         expression: BaseNode,
-        definitions: tuple[tuple[DefinitionKey, BaseNode], ...] | None = None,
-        partial_definitions: tuple[tuple[DefinitionKey, BaseNode | None], ...] | None = None,
-        assumptions: tuple[Assumption, ...] | None = None,
+        definitions: tuple[tuple[DefinitionKey, BaseNode], ...] | None,
+        partial_definitions: tuple[tuple[DefinitionKey, BaseNode | None], ...] | None,
+        arg_groups: tuple[ArgGroup, ...] | None,
+        assumptions: tuple[Assumption, ...] | None,
     ):
         self._expression = expression
         self._definitions = definitions
         self._partial_definitions = partial_definitions
+        self._arg_groups = arg_groups
         self._assumptions = assumptions
 
     @property
@@ -24,6 +41,10 @@ class State:
     @property
     def partial_definitions(self) -> tuple[tuple[DefinitionKey, BaseNode | None], ...] | None:
         return self._partial_definitions
+
+    @property
+    def arg_groups(self) -> tuple[ArgGroup, ...] | None:
+        return self._arg_groups
 
     @property
     def assumptions(self) -> tuple[Assumption, ...] | None:
@@ -70,17 +91,18 @@ class State:
     @classmethod
     def _replace_node_index(
         cls,
-        root: BaseNode,
+        root: BaseNode | None,
         index: int,
         new_node: BaseNode,
     ) -> tuple[BaseNode | None, int]:
-        assert root is not None
         assert index > 0, f"Invalid index for root node: {index}"
         assert isinstance(index, int), f"Invalid index type for root node: {type(index)} ({index})"
         index -= 1
 
         if index == 0:
             return new_node, index
+
+        assert root is not None, f"Invalid root node for index {index}"
 
         args_list: list[BaseNode] = list(root.args)
 
@@ -114,8 +136,13 @@ class State:
             expr
             for _, expr in self.partial_definitions or []
             if expr is not None]
+        arg_exprs: list[BaseNode] = [
+            expr
+            for group in self.arg_groups or []
+            for expr in group.expressions
+            if expr is not None]
 
-        for expr in [self.expression] + definitions + partial_definitions:
+        for expr in [self.expression] + definitions + partial_definitions + arg_exprs:
             node, index, child_index = self._index_to_node(
                 root=expr, index=index, parent=parent)
             assert index >= 0, f"Invalid index for node: {initial_index}"
@@ -152,7 +179,7 @@ class State:
 
         return None, None, None
 
-    def replace_partial_definition(
+    def change_partial_definition(
         self,
         partial_definition_idx: int,
         node_idx: int,
@@ -164,7 +191,6 @@ class State:
         assert partial_definition_idx < len(partial_definitions_list), \
             f"Invalid partial definition: {partial_definition_idx}"
         key, root = partial_definitions_list[partial_definition_idx]
-        assert root is not None, f"Invalid partial definition: {partial_definition_idx}"
         new_root, index = self._replace_node_index(
             root=root,
             index=node_idx,
@@ -177,6 +203,44 @@ class State:
             expression=self.expression,
             definitions=self.definitions,
             partial_definitions=tuple(partial_definitions_list),
+            arg_groups=self.arg_groups,
+            assumptions=self.assumptions)
+
+    def change_arg(
+        self,
+        arg_group_id: int,
+        arg_id: int,
+        node_idx: int,
+        new_node: BaseNode,
+    ) -> 'State':
+        arg_group_idx = arg_group_id - 1
+        arg_idx = arg_id - 1
+        arg_groups_list = list(self.arg_groups or [])
+        assert arg_group_idx >= 0, f"Invalid arg group: {arg_group_id}"
+        assert arg_group_idx < len(arg_groups_list), f"Invalid arg group: {arg_group_id}"
+        arg_group = arg_groups_list[arg_group_idx]
+        expressions = list(arg_group.expressions)
+        assert arg_group.amount == len(expressions), \
+            f"Invalid amount of expressions: {arg_group.amount} != {len(expressions)}"
+        assert arg_idx >= 0, f"Invalid arg: {arg_id}"
+        assert arg_idx < len(arg_group.expressions), f"Invalid arg: {arg_id}"
+        expression = expressions[arg_idx]
+        new_root, index = self._replace_node_index(
+            root=expression,
+            index=node_idx,
+            new_node=new_node)
+        assert index == 0, f"Node {node_idx} not found in arg: " \
+            + f"{arg_id} (group: {arg_group_id})"
+        assert new_root is not None, "Invalid new root node"
+        expressions[arg_idx] = new_root
+        arg_groups_list[arg_group_idx] = ArgGroup(
+            amount=arg_group.amount,
+            expressions=tuple(expressions))
+        return State(
+            expression=self.expression,
+            definitions=self.definitions,
+            partial_definitions=self.partial_definitions,
+            arg_groups=tuple(arg_groups_list),
             assumptions=self.assumptions)
 
     def apply_new_node(self, expr_id: int, new_node: BaseNode) -> 'State':
@@ -194,6 +258,7 @@ class State:
                 expression=new_root,
                 definitions=self.definitions,
                 partial_definitions=self.partial_definitions,
+                arg_groups=self.arg_groups,
                 assumptions=self.assumptions)
 
         definitions_list = list(self.definitions or [])
@@ -207,6 +272,8 @@ class State:
                 return State(
                     expression=self.expression,
                     definitions=tuple(definitions_list),
+                    partial_definitions=self.partial_definitions,
+                    arg_groups=self.arg_groups,
                     assumptions=self.assumptions)
 
         partial_definitions_list = list(self.partial_definitions or [])
@@ -223,7 +290,30 @@ class State:
                         expression=self.expression,
                         definitions=self.definitions,
                         partial_definitions=tuple(partial_definitions_list),
+                        arg_groups=self.arg_groups,
                         assumptions=self.assumptions)
+
+        arg_groups_list = list(self.arg_groups or [])
+        for i, arg_group in enumerate(arg_groups_list):
+            expressions = list(arg_group.expressions)
+            for j, expr_p in enumerate(expressions):
+                if expr_p is not None:
+                    expr = expr_p
+                    new_root, index = self._replace_node_index(
+                        root=expr, index=index, new_node=new_node)
+                    assert index >= 0, f"Invalid index for node: {index}"
+                    if index == 0:
+                        assert new_root is not None, "Invalid new root node (arg)"
+                        expressions[j] = new_root
+                        arg_groups_list[i] = ArgGroup(
+                            amount=arg_group.amount,
+                            expressions=tuple(expressions))
+                        return State(
+                            expression=self.expression,
+                            definitions=self.definitions,
+                            partial_definitions=self.partial_definitions,
+                            arg_groups=tuple(arg_groups_list),
+                            assumptions=self.assumptions)
 
         raise ValueError(f"Invalid expr_id: {expr_id}")
 

@@ -1,6 +1,6 @@
 import typing
 from .state import State, BaseNode, DefinitionKey
-from .action import Action, ActionArgType, ActionInput, ActionOutput
+from .action import Action, ActionMetaInfo, ActionInput, ActionOutput
 from .reward import RewardEvaluator
 
 T = typing.TypeVar("T", bound=BaseNode)
@@ -73,8 +73,11 @@ class EnvMetaInfo:
         self._node_types = node_types
         self._atomic_node_handlers = atomic_node_handlers
         self._action_types = action_types
-        self._actions_arg_types = tuple([
-            action.metadata().arg_types for action in action_types
+        self._action_types_info = tuple([
+            ActionMetaInfo(
+                type_idx=i,
+                arg_types=action.metadata().arg_types,
+            ) for i, action in enumerate(action_types)
         ])
 
     @property
@@ -94,8 +97,8 @@ class EnvMetaInfo:
         return self._action_types
 
     @property
-    def actions_arg_types(self) -> tuple[tuple[ActionArgType, ...], ...]:
-        return self._actions_arg_types
+    def action_types_info(self) -> tuple[ActionMetaInfo, ...]:
+        return self._action_types_info
 
 class FullEnvMetaInfo(EnvMetaInfo):
     def __init__(
