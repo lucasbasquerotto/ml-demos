@@ -1,7 +1,7 @@
 import typing
 import numpy as np
 from utils.logger import logger
-from .state import State, BaseNode, DefinitionKey
+from .state import State, BaseNode, FunctionDefinition
 from .action import (
     Action,
     InvalidActionException,
@@ -39,8 +39,10 @@ ACTION_STATUS_CONTEXT = 3
 
 ACTION_OUTPUT_SUBCONTEXT_PARTIAL_DEFINITION_IDX = 1
 ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX = 2
-ACTION_OUTPUT_SUBCONTEXT_EXPR_ID = 3
-ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR = 4
+ACTION_OUTPUT_SUBCONTEXT_ARG_GROUP_IDX = 3
+ACTION_OUTPUT_SUBCONTEXT_ARG_AMOUNT = 4
+ACTION_OUTPUT_SUBCONTEXT_EXPR_ID = 5
+ACTION_OUTPUT_SUBCONTEXT_NODE_EXPR = 6
 
 ACTION_STATUS_SKIP_ID = 0
 ACTION_STATUS_SUCCESS_ID = 1
@@ -50,6 +52,8 @@ UNKNOWN_OR_EMPTY_FIELD = 0
 
 action_output_types = [
     NewPartialDefinitionActionOutput,
+    NewArgGroupActionOutput,
+    ArgFromExprActionOutput,
     NewDefinitionFromPartialActionOutput,
     NewDefinitionFromExprActionOutput,
     ReplaceByDefinitionActionOutput,
@@ -460,6 +464,27 @@ class FullState:
                     subcontext=ACTION_OUTPUT_SUBCONTEXT_PARTIAL_DEFINITION_IDX,
                     node_value=action_output.partial_definition_idx,
                 ))
+            elif isinstance(action_output, NewArgGroupActionOutput):
+                action_output_nodes.append(create_node(
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_ARG_GROUP_IDX,
+                    node_value=action_output.arg_group_idx,
+                ))
+
+                action_output_nodes.append(create_node(
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_ARG_AMOUNT,
+                    node_value=action_output.amount,
+                ))
+            elif isinstance(action_output, ArgFromExprActionOutput):
+                action_output_nodes.append(create_node(
+                    subcontext=ACTION_OUTPUT_SUBCONTEXT_ARG_GROUP_IDX,
+                    node_value=action_output.arg_group_idx,
+                ))
+
+                output_expr_nodes, history_expr_id = create_node_tree(
+                    node=action_output.new_node,
+                    history_expr_id=history_expr_id,
+                )
+                action_output_nodes += output_expr_nodes
             elif isinstance(action_output, NewDefinitionFromPartialActionOutput):
                 action_output_nodes.append(create_node(
                     subcontext=ACTION_OUTPUT_SUBCONTEXT_DEFINITION_IDX,
@@ -525,7 +550,7 @@ class FullState:
         get_expressions: typing.Callable[[G], tuple[BaseNode | None, ...]],
         history_expr_id: int,
         symbols: list[BaseNode],
-        definition_keys: list[DefinitionKey],
+        definition_keys: list[FunctionDefinition],
     ) -> tuple[list[NodeItemData], int]:
         nodes: list[NodeItemData] = []
         next_history_expr_id = history_expr_id
@@ -564,7 +589,7 @@ class FullState:
         get_expressions: typing.Callable[[G], tuple[BaseNode | None, ...]],
         history_expr_id: int,
         symbols: list[BaseNode],
-        definition_keys: list[DefinitionKey],
+        definition_keys: list[FunctionDefinition],
     ) -> tuple[list[NodeItemData], int]:
         nodes: list[NodeItemData] = [NodeItemData(
             history_number=history_number,
@@ -609,7 +634,7 @@ class FullState:
         expressions: list[BaseNode | None],
         history_expr_id: int,
         symbols: list[BaseNode],
-        definition_keys: list[DefinitionKey],
+        definition_keys: list[FunctionDefinition],
     ) -> tuple[list[NodeItemData], int]:
         nodes: list[NodeItemData] = []
 
@@ -640,7 +665,7 @@ class FullState:
         history_expr_id: int,
         node: BaseNode | None,
         symbols: list[BaseNode],
-        definition_keys: list[DefinitionKey],
+        definition_keys: list[FunctionDefinition],
     ) -> tuple[list[NodeItemData], int]:
         if node is None:
             node_data = self._leaf_node_data(
@@ -690,7 +715,7 @@ class FullState:
         history_expr_id: int,
         node: BaseNode,
         symbols: list[BaseNode],
-        definition_keys: list[DefinitionKey],
+        definition_keys: list[FunctionDefinition],
     ) -> tuple[list[NodeItemData], int, int]:
         assert node is not None
 
@@ -743,7 +768,7 @@ class FullState:
         history_expr_id: int | None,
         node: BaseNode | None,
         symbols: list[BaseNode],
-        definition_keys: list[DefinitionKey],
+        definition_keys: list[FunctionDefinition],
     ) -> NodeItemData:
         meta = self._meta
 

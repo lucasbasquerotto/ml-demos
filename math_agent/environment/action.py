@@ -1,4 +1,4 @@
-from utils.types import BaseNode, DefinitionKey
+from utils.types import BaseNode, FunctionDefinition
 from environment.state import State, ArgGroup
 
 ###########################################################
@@ -270,7 +270,7 @@ class Action:
                 f"Invalid partial definition index: {partial_definition_idx}"
 
             partial_definitions = list(state.partial_definitions or [])
-            partial_definitions.append((DefinitionKey(), None))
+            partial_definitions.append((FunctionDefinition(), None))
 
             return State(
                 expression=state.expression,
@@ -361,7 +361,7 @@ class Action:
             assert new_node is not None, "Invalid new node"
 
             definitions_list = list(state.definitions or [])
-            definitions_list.append((DefinitionKey(), new_node))
+            definitions_list.append((FunctionDefinition(), new_node))
 
             return State(
                 expression=state.expression,

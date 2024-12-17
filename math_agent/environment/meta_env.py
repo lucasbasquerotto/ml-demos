@@ -1,5 +1,5 @@
 import typing
-from .state import State, BaseNode, DefinitionKey
+from .state import State, BaseNode, FunctionDefinition
 from .action import Action, ActionMetaInfo, ActionInput, ActionOutput
 from .reward import RewardEvaluator
 
@@ -27,7 +27,7 @@ class ActionData:
 StateHistoryItem = State | ActionData
 
 class NodeValueParams(typing.Generic[T]):
-    def __init__(self, node: T, symbols: list[BaseNode], definition_keys: list[DefinitionKey]):
+    def __init__(self, node: T, symbols: list[BaseNode], definition_keys: list[FunctionDefinition]):
         self._node = node
         self._symbols = symbols
         self._definition_keys = definition_keys
@@ -41,7 +41,7 @@ class NodeValueParams(typing.Generic[T]):
         return self._symbols
 
     @property
-    def definition_keys(self) -> list[DefinitionKey]:
+    def definition_keys(self) -> list[FunctionDefinition]:
         return self._definition_keys
 
 class NodeTypeHandler(typing.Generic[T, V]):

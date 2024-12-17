@@ -1,7 +1,21 @@
-from utils.types import BaseNode, DefinitionKey, Assumption
+import sympy
+from utils.types import BaseNode, FunctionDefinition, ParamVar, Assumption
+
+class ExprInfo:
+    def __init__(self, expr: BaseNode, params: tuple[ParamVar, ...]):
+        self._expr = expr
+        self._params = params
+
+    @property
+    def expr(self) -> BaseNode:
+        return self._expr
+
+    @property
+    def params(self) -> tuple[ParamVar, ...]:
+        return self._params
 
 class ArgGroup:
-    def __init__(self, amount, expressions: tuple[BaseNode | None, ...]):
+    def __init__(self, amount, expressions: tuple[ExprInfo | None, ...]):
         assert amount == len(expressions), \
             f"Invalid amount of expressions: {amount} != {len(expressions)}"
         self._amount = amount
@@ -12,34 +26,54 @@ class ArgGroup:
         return self._amount
 
     @property
-    def expressions(self) -> tuple[BaseNode | None, ...]:
+    def expressions(self) -> tuple[ExprInfo | None, ...]:
         return self._expressions
+
+class ExprWithArgs:
+    def __init__(self, expr_info: ExprInfo, args: tuple[BaseNode, ...]):
+        assert len(expr_info.params) == len(args), \
+            f"Invalid amount of arguments: {len(expr_info.params)} != {len(args)}"
+
+        args_dict: dict[ParamVar, BaseNode] = {
+            p: args[i]
+            for i, p in enumerate(expr_info.params)
+        }
+
+        self._expr_info = expr_info
+        self._args = args
+        self._args_dict = args_dict
+
+    @property
+    def expr(self) -> BaseNode:
+        return self._expr_info.expr
+
+    @property
+    def args(self) -> tuple[BaseNode, ...]:
+        return self._args
+
+    @property
+    def apply(self) -> BaseNode:
+        return self.expr.subs(self._args_dict)
 
 class State:
     def __init__(
         self,
-        expression: BaseNode,
-        definitions: tuple[tuple[DefinitionKey, BaseNode], ...] | None,
-        partial_definitions: tuple[tuple[DefinitionKey, BaseNode | None], ...] | None,
+        definitions: tuple[tuple[FunctionDefinition, ExprInfo], ...] | None,
+        partial_definitions: tuple[tuple[FunctionDefinition, ExprInfo | None], ...] | None,
         arg_groups: tuple[ArgGroup, ...] | None,
         assumptions: tuple[Assumption, ...] | None,
     ):
-        self._expression = expression
         self._definitions = definitions
         self._partial_definitions = partial_definitions
         self._arg_groups = arg_groups
         self._assumptions = assumptions
 
     @property
-    def expression(self) -> BaseNode:
-        return self._expression
-
-    @property
-    def definitions(self) -> tuple[tuple[DefinitionKey, BaseNode], ...] | None:
+    def definitions(self) -> tuple[tuple[FunctionDefinition, ExprInfo], ...] | None:
         return self._definitions
 
     @property
-    def partial_definitions(self) -> tuple[tuple[DefinitionKey, BaseNode | None], ...] | None:
+    def partial_definitions(self) -> tuple[tuple[FunctionDefinition, ExprInfo | None], ...] | None:
         return self._partial_definitions
 
     @property
@@ -129,20 +163,20 @@ class State:
         parent: bool = False,
     ) -> tuple[BaseNode | None, int | None]:
         initial_index = index
-        definitions: list[BaseNode] = [
+        definitions: list[ExprInfo] = [
             expr
             for _, expr in self.definitions or []]
-        partial_definitions: list[BaseNode] = [
+        partial_definitions: list[ExprInfo] = [
             expr
             for _, expr in self.partial_definitions or []
             if expr is not None]
-        arg_exprs: list[BaseNode] = [
+        arg_exprs: list[ExprInfo] = [
             expr
             for group in self.arg_groups or []
             for expr in group.expressions
             if expr is not None]
 
-        for expr in [self.expression] + definitions + partial_definitions + arg_exprs:
+        for expr in definitions + partial_definitions + arg_exprs:
             node, index, child_index = self._index_to_node(
                 root=expr, index=index, parent=parent)
             assert index >= 0, f"Invalid index for node: {initial_index}"
@@ -183,7 +217,7 @@ class State:
         self,
         partial_definition_idx: int,
         node_idx: int,
-        new_node: BaseNode,
+        new_node_info: ExprInfo,
     ) -> 'State':
         partial_definitions_list = list(self.partial_definitions or [])
         assert partial_definition_idx >= 0, \
@@ -192,15 +226,14 @@ class State:
             f"Invalid partial definition: {partial_definition_idx}"
         key, root = partial_definitions_list[partial_definition_idx]
         new_root, index = self._replace_node_index(
-            root=root,
+            root=root.expr,
             index=node_idx,
-            new_node=new_node)
+            new_node=new_node_info.expr.subs(new_node_info.params.dict()))
         assert index == 0, f"Node {node_idx} not found " \
             + f"in partial definition: {partial_definition_idx}"
         assert new_root is not None, "Invalid new root node"
         partial_definitions_list[partial_definition_idx] = (key, new_root)
         return State(
-            expression=self.expression,
             definitions=self.definitions,
             partial_definitions=tuple(partial_definitions_list),
             arg_groups=self.arg_groups,
@@ -237,7 +270,6 @@ class State:
             amount=arg_group.amount,
             expressions=tuple(expressions))
         return State(
-            expression=self.expression,
             definitions=self.definitions,
             partial_definitions=self.partial_definitions,
             arg_groups=tuple(arg_groups_list),
@@ -249,18 +281,6 @@ class State:
 
         index = expr_id
 
-        new_root, index = self._replace_node_index(
-            root=self.expression, index=index, new_node=new_node)
-        assert index >= 0, f"Invalid index for node: {index}"
-        if index == 0:
-            assert new_root is not None, "Invalid new root node"
-            return State(
-                expression=new_root,
-                definitions=self.definitions,
-                partial_definitions=self.partial_definitions,
-                arg_groups=self.arg_groups,
-                assumptions=self.assumptions)
-
         definitions_list = list(self.definitions or [])
         for i, (key, expr) in enumerate(definitions_list):
             new_root, index = self._replace_node_index(
@@ -270,7 +290,6 @@ class State:
                 assert new_root is not None, "Invalid new root node (definition)"
                 definitions_list[i] = (key, new_root)
                 return State(
-                    expression=self.expression,
                     definitions=tuple(definitions_list),
                     partial_definitions=self.partial_definitions,
                     arg_groups=self.arg_groups,
@@ -287,7 +306,6 @@ class State:
                     assert new_root is not None, "Invalid new root node (partial definition)"
                     partial_definitions_list[i] = (key, new_root)
                     return State(
-                        expression=self.expression,
                         definitions=self.definitions,
                         partial_definitions=tuple(partial_definitions_list),
                         arg_groups=self.arg_groups,
@@ -309,7 +327,6 @@ class State:
                             amount=arg_group.amount,
                             expressions=tuple(expressions))
                         return State(
-                            expression=self.expression,
                             definitions=self.definitions,
                             partial_definitions=self.partial_definitions,
                             arg_groups=tuple(arg_groups_list),
@@ -317,12 +334,14 @@ class State:
 
         raise ValueError(f"Invalid expr_id: {expr_id}")
 
-    def __eq__(self, other) -> bool:
-        if not isinstance(other, State):
-            return False
-
-        my_definitions = self._definitions or tuple()
-        other_definitions = other._definitions or tuple()
+    @classmethod
+    def same_definitions(
+        cls,
+        my_definitions: tuple[tuple[FunctionDefinition, BaseNode | None], ...] | None,
+        other_definitions: tuple[tuple[FunctionDefinition, BaseNode | None], ...] | None,
+    ) -> bool:
+        my_definitions = my_definitions or tuple()
+        other_definitions = other_definitions or tuple()
 
         if len(my_definitions) != len(other_definitions):
             return False
@@ -332,7 +351,7 @@ class State:
             for (definition, _), (other_definition, _) in zip(my_definitions, other_definitions)
         }
 
-        return self._expression == other._expression.subs(definitions_to_replace) and all(
+        return all(
             (expr == other_expr == None)
             or
             (
@@ -344,3 +363,25 @@ class State:
             )
             for (_, expr), (_, other_expr) in zip(my_definitions, other_definitions)
         )
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, State):
+            return False
+
+        same_definitions = self.same_definitions(
+            self.definitions,
+            other.definitions)
+
+        if not same_definitions:
+            return False
+
+        same_partial_definitions = self.same_definitions(
+            self.partial_definitions,
+            other.partial_definitions)
+
+        if not same_partial_definitions:
+            return False
+
+        # TODO
+
+        return True
