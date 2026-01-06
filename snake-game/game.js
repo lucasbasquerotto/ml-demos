@@ -17,11 +17,16 @@ let gameLoop = null;
 let isPaused = false;
 let gameStarted = false;
 let speed = INITIAL_SPEED;
+let bot = null;
+let botEnabled = false;
 
 // Initialize game
 document.addEventListener('DOMContentLoaded', () => {
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
+
+    // Initialize bot
+    bot = new SnakeBot(GRID_X_SIZE, GRID_Y_SIZE);
 
     // Load high score from localStorage
     highScore = localStorage.getItem('snakeHighScore') || 0;
@@ -32,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('pauseBtn').addEventListener('click', togglePause);
     document.getElementById('resetBtn').addEventListener('click', resetGame);
     document.getElementById('playAgainBtn').addEventListener('click', playAgain);
+    document.getElementById('botBtn').addEventListener('click', toggleBot);
     document.addEventListener('keydown', handleKeyPress);
 
     // Initialize game without starting
@@ -138,6 +144,14 @@ function handleKeyPress(e) {
 }
 
 function update() {
+    // Let bot decide direction if enabled
+    if (botEnabled && bot) {
+        const botDirection = bot.getNextDirection(snake, food, direction);
+        if (botDirection) {
+            setDirectionFromString(botDirection);
+        }
+    }
+
     // Update direction
     direction = { ...nextDirection };
 
@@ -297,4 +311,36 @@ function gameOver() {
     document.getElementById('startBtn').disabled = false;
     document.getElementById('pauseBtn').disabled = true;
     document.getElementById('pauseBtn').textContent = 'Pause';
+}
+
+function toggleBot() {
+    if (!bot) return;
+
+    botEnabled = bot.toggle();
+    const botBtn = document.getElementById('botBtn');
+
+    if (botEnabled) {
+        botBtn.textContent = '🤖 Disable Bot';
+        botBtn.style.background = '#ffc107';
+    } else {
+        botBtn.textContent = '🤖 Enable Bot';
+        botBtn.style.background = '#6c757d';
+    }
+}
+
+function setDirectionFromString(dir) {
+    switch(dir) {
+        case 'up':
+            if (direction.y === 0) nextDirection = { x: 0, y: -1 };
+            break;
+        case 'down':
+            if (direction.y === 0) nextDirection = { x: 0, y: 1 };
+            break;
+        case 'left':
+            if (direction.x === 0) nextDirection = { x: -1, y: 0 };
+            break;
+        case 'right':
+            if (direction.x === 0) nextDirection = { x: 1, y: 0 };
+            break;
+    }
 }
