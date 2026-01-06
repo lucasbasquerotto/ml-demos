@@ -1,5 +1,6 @@
 // Game constants
-const GRID_SIZE = 20;
+const GRID_X_SIZE = 20;
+const GRID_Y_SIZE = 30;
 const CELL_SIZE = 20;
 const INITIAL_SPEED = 150;
 const SPEED_INCREMENT = 5;
@@ -146,7 +147,7 @@ function update() {
     head.y += direction.y;
 
     // Check collision with walls
-    if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
+    if (head.x < 0 || head.x >= GRID_X_SIZE || head.y < 0 || head.y >= GRID_Y_SIZE) {
         gameOver();
         return;
     }
@@ -192,8 +193,8 @@ function update() {
 function spawnFood() {
     // Generate random position
     do {
-        food.x = Math.floor(Math.random() * GRID_SIZE);
-        food.y = Math.floor(Math.random() * GRID_SIZE);
+        food.x = Math.floor(Math.random() * GRID_X_SIZE);
+        food.y = Math.floor(Math.random() * GRID_Y_SIZE);
     } while (snake.some(segment => segment.x === food.x && segment.y === food.y));
 }
 
@@ -205,12 +206,13 @@ function drawGame() {
     // Draw grid
     ctx.strokeStyle = '#e0e0e0';
     ctx.lineWidth = 1;
-    for (let i = 0; i <= GRID_SIZE; i++) {
+    for (let i = 0; i <= GRID_X_SIZE; i++) {
         ctx.beginPath();
         ctx.moveTo(i * CELL_SIZE, 0);
         ctx.lineTo(i * CELL_SIZE, canvas.height);
         ctx.stroke();
-
+    }
+    for (let i = 0; i <= GRID_Y_SIZE; i++) {
         ctx.beginPath();
         ctx.moveTo(0, i * CELL_SIZE);
         ctx.lineTo(canvas.width, i * CELL_SIZE);
