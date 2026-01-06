@@ -8,16 +8,22 @@ class SnakeBot {
         this.gridYSize = gridYSize;
         this.enabled = false;
         this.path = [];
+        this.lastSnakeLength = 0;
+        this.lastFoodPos = null;
     }
 
     enable() {
         this.enabled = true;
         this.path = [];
+        this.lastSnakeLength = 0;
+        this.lastFoodPos = null;
     }
 
     disable() {
         this.enabled = false;
         this.path = [];
+        this.lastSnakeLength = 0;
+        this.lastFoodPos = null;
     }
 
     toggle() {
@@ -38,28 +44,27 @@ class SnakeBot {
 
         const head = snake[0];
 
-        // Debug: log current state
-        console.log('Bot - Head:', head, 'Food:', food, 'Direction:', currentDirection);
+        // Check if we need to recalculate path
+        const snakeGrew = snake.length > this.lastSnakeLength;
+        const foodMoved = !this.lastFoodPos || this.lastFoodPos.x !== food.x || this.lastFoodPos.y !== food.y;
+        const pathInvalid = !this.isPathValid(snake, this.path);
 
-        // Always try to find a fresh path to food
-        this.path = this.findPathToFood(snake, food);
-
-        console.log('Bot - Path found:', this.path);
+        // Only recalculate if necessary (reduces lag)
+        if (this.path.length === 0 || snakeGrew || foodMoved || pathInvalid) {
+            this.path = this.findPathToFood(snake, food);
+            this.lastSnakeLength = snake.length;
+            this.lastFoodPos = { x: food.x, y: food.y };
+        }
 
         // If we can't find a path to food, try to find a safe move
         if (this.path.length === 0) {
-            console.log('Bot - No path to food, finding safe direction');
             const safeDir = this.findSafeDirection(snake, currentDirection);
-            console.log('Bot - Safe direction:', safeDir);
             return safeDir;
         }
 
-        // Follow the path - get the FIRST position in the path
-        const nextPos = this.path[0];
-        console.log('Bot - Next position from path:', nextPos);
-
+        // Follow the path and remove the first position
+        const nextPos = this.path.shift();
         const direction = this.getDirectionToPosition(head, nextPos);
-        console.log('Bot - Direction to next position:', direction);
 
         return direction;
     }
@@ -70,8 +75,6 @@ class SnakeBot {
     findPathToFood(snake, food) {
         const start = snake[0];
         const goal = food;
-
-        console.log('A* - Starting pathfinding from', start, 'to', goal);
 
         const openSet = [start];
         const cameFrom = new Map();
@@ -107,41 +110,29 @@ class SnakeBot {
 
             // Check if we reached the goal
             if (current.x === goal.x && current.y === goal.y) {
-                console.log('A* - Found path after', iterations, 'iterations');
-                const path = this.reconstructPath(cameFrom, current);
-                console.log('A* - Reconstructed path:', path);
-                return path;
+                return this.reconstructPath(cameFrom, current);
             }
 
             openSet.splice(currentIndex, 1);
 
             // Check all neighbors
             const neighbors = this.getNeighbors(current);
-            console.log('A* - Exploring', neighbors.length, 'neighbors from', current);
-            console.log('A* - Current key:', this.positionKey(current), 'gScore:', gScore.get(this.positionKey(current)));
 
             for (const neighbor of neighbors) {
                 const neighborKey = this.positionKey(neighbor);
-                console.log('A* - Checking neighbor', neighbor);
 
                 // Skip if position is occupied by snake body (except tail which will move)
                 if (this.isOccupiedBySnake(neighbor, snake, true)) {
-                    console.log('A* - Neighbor occupied by snake, skipping');
                     continue;
                 }
 
-                console.log('A* - Neighbor is free, adding to consideration');
-
-                // DEBUGGING: Store currentKey outside the calculation
+                // Calculate tentative gScore for this neighbor
                 const savedCurrentKey = this.positionKey(current);
-                console.log('A* - savedCurrentKey:', savedCurrentKey, 'gScore has it:', gScore.has(savedCurrentKey), 'value:', gScore.get(savedCurrentKey));
 
                 const currentGScoreValue = gScore.get(savedCurrentKey);
                 const tentativeGScore = (currentGScoreValue !== undefined ? currentGScoreValue : Infinity) + 1;
                 const existingGScore = gScore.get(neighborKey);
                 const existingGScoreValue = existingGScore !== undefined ? existingGScore : Infinity;
-
-                console.log('A* - tentativeGScore:', tentativeGScore, 'existingGScore:', existingGScoreValue, 'will update:', tentativeGScore < existingGScoreValue);
 
                 if (tentativeGScore < existingGScoreValue) {
                     cameFrom.set(neighborKey, current);
@@ -150,15 +141,11 @@ class SnakeBot {
 
                     if (!openSet.some(pos => pos.x === neighbor.x && pos.y === neighbor.y)) {
                         openSet.push(neighbor);
-                        console.log('A* - Added to openSet. Size:', openSet.length);
-                    } else {
-                        console.log('A* - Neighbor already in openSet');
                     }
                 }
             }
         }
 
-        console.log('A* - No path found after', iterations, 'iterations. OpenSet final size:', openSet.length);
         return []; // No path found
     }
 
@@ -268,13 +255,26 @@ class SnakeBot {
      * Check if a position is occupied by snake
      */
     isOccupiedBySnake(pos, snake, ignoreTail) {
-        const length = ignoreTail ? snake.length - 1 : snake.length;
-        for (let i = 0; i < length; i++) {
+        // When checking if position is occupied, account for snake movement
+        // If ignoreTail is true, the tail will move away, so we can ignore it
+        const checkLength = ignoreTail ? snake.length - 1 : snake.length;
+        for (let i = 0; i < checkLength; i++) {
             if (snake[i].x === pos.x && snake[i].y === pos.y) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Check if current path is still valid (not blocked by snake body)
+     */
+    isPathValid(path, snake) {
+        if (!path || path.length === 0) return false;
+
+        // Check if next position in path is blocked
+        const nextPos = path[0];
+        return !this.isOccupiedBySnake(nextPos, snake, true) && !this.isOutOfBounds(nextPos);
     }
 
     /**
@@ -327,10 +327,19 @@ class SnakeBot {
      * Check if the current path is still valid
      */
     isPathValid(snake, path) {
-        if (path.length === 0) return false;
+        if (!path || path.length === 0) return false;
+        if (!snake || snake.length === 0) return false;
 
         const head = snake[0];
         const nextPos = path[0];
+
+        // Check that both head and nextPos are valid
+        if (!head || head.x === undefined || head.y === undefined) {
+            return false;
+        }
+        if (!nextPos || nextPos.x === undefined || nextPos.y === undefined) {
+            return false;
+        }
 
         // Check if next position is adjacent to head
         const dx = Math.abs(nextPos.x - head.x);
