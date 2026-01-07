@@ -3,10 +3,10 @@ Token and Node definitions for extensible math agent.
 Only built-in Python packages are used.
 """
 
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Optional, Callable
 
 class Node:
-    def __init__(self, name: str, args: Optional[List[Any]] = None):
+    def __init__(self, name: str, args: Optional[list[Any]] = None):
         self.name = name
         self.args = args or []
     def __str__(self):
@@ -14,12 +14,15 @@ class Node:
             return f"{self.name}({', '.join(str(a) for a in self.args)})"
         return self.name
     def to_dict(self):
-        return {'name': self.name, 'args': [a.to_dict() if isinstance(a, Node) else a for a in self.args]}
+        return {
+            'name': self.name,
+            'args': [a.to_dict() if isinstance(a, Node) else a for a in self.args]
+        }
 
 class NodeRegistry:
     def __init__(self):
-        self.builtins: Dict[str, Callable] = {}
-        self.custom: Dict[str, Callable] = {}
+        self.builtins: dict[str, Callable] = {}
+        self.custom: dict[str, Callable] = {}
         self.allow_custom = False
     def register_builtin(self, name: str, func: Callable):
         self.builtins[name] = func
